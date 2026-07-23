@@ -64,7 +64,7 @@ Pick the destination by the **kind** of content, not the topic:
      union open items + facts across EVERY repo that declares the SAME (lowercase)
      project name. Copy the line below, DROP the `-example` suffix so it goes live,
      put it on its own line, and set your name (the `-example` form is inert): -->
-ledger-project: tagpulse
+<!-- ledger-project: tagpulse -->
 <!-- Uncomment the rows the repo has grown into (profile s+ / grow):
 | Architecture, proposals, decisions — the *why* (Diátaxis *explanation* / ADRs) | `docs/design/` |
 | How-to workflows and walkthroughs (Diátaxis *how-to* / *tutorial*) | `docs/guides/` |
