@@ -54,3 +54,9 @@ One line per area, each linking to the doc that owns the detail.
 - **Q-D** background tracking policy (battery vs fidelity).
 
 See [`docs/design/mobile-client.md`](design/mobile-client.md#open-questions).
+
+**Forward-looking (not v1 scope):** an exploration reframes the phone as a mobile edge
+**gateway** (BLE/sensor aggregation + an on-device ingest SDK for other apps) via a
+generalized *gateway core + per-modality drivers* pattern — see
+[`docs/design/edge-gateway-exploration.md`](design/edge-gateway-exploration.md) (open
+questions G-1…G-6, incl. downstream-subject trust, mixed-subject batch, footprint).
