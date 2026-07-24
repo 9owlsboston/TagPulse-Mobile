@@ -61,5 +61,7 @@ walked its open questions (G-1…G-6, Q-A/Q-B) to decisions grounded in the back
 the gateway is **contract-compatible today** for reads + mixed-subject telemetry batches,
 with **two hard backend asks** remaining — a **scoped gateway principal** for telemetry
 ingest (ledger `I-75YC`, refines `I-F0PR`) and **generalizing external-position to all
-subject kinds** (ledger `I-9HQA`). See
-[`docs/design/edge-gateway-exploration.md`](design/edge-gateway-exploration.md#design-discussion-outcomes-2026-07-24).
+subject kinds** (ledger `I-9HQA`). A candidate **MVE** is named — *OBDII-on-demand*
+(BLE dongle → read PIDs → relay via `tag-reads` → Map; Android-first, green-zone, ledger
+`D-M8XF`). See
+[`docs/design/edge-gateway-exploration.md`](design/edge-gateway-exploration.md#mve-prospect--obdii-on-demand-candidate-first-gateway-modality).
