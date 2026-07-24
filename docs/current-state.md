@@ -16,10 +16,11 @@ RFID readers. It's a **hybrid app** with a mode switch — Field-Tech (foregroun
 inspect) and Tracker (background moving beacon) — that is **offline-first** and
 **HTTP-first**, POSTing batched observations to the existing TagPulse API.
 
-**Where it stands today:** repo just **bootstrapped** (profile `xs`) with the **design
-drafted** and the four foundational decisions locked (separate repo · hybrid · native
-Swift+Kotlin · HTTP-first). **No app code yet** — Phase 0 spike is the next step, and it
-needs zero backend changes.
+**Where it stands today:** design drafted + the four foundational decisions locked (separate
+repo · hybrid · native Swift+Kotlin · HTTP-first), the **OBDII-on-demand MVE plan** agreed,
+and **Phase-0 M0 (scaffold) merged** — the Android Gradle project now exists (`:app`,
+`:gateway-core`, `:obdii`) with the `GatewayDriver` seam, `Observation` model, and an
+OpenAPI-generated backend client (no behavior yet). **M1 (BLE connect + one PID)** is next.
 
 ## Diagram
 
@@ -33,8 +34,11 @@ One line per area, each linking to the doc that owns the detail.
 
 - **Design** — drafted; decisions D1–D4 locked, endpoints mapped, phased plan set. See
   [`docs/design/mobile-client.md`](design/mobile-client.md).
-- **App code** — none yet. Phase 0 spike (enrol → camera scan → `POST /tag-reads` → Map)
-  is the next deliverable.
+- **App code** — **Phase-0 M0 (scaffold) merged**: Android Gradle project (`:app`,
+  `:gateway-core`, `:obdii`), the `GatewayDriver` `discover→read→normalize` seam +
+  `Observation` model, and a backend client **generated** from the vendored `openapi.json`
+  (backend SHA `06dde2b`). No behavior yet — `ObdiiDriver` is stubs. Next: **M1** (BLE
+  connect + read RPM) per [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md#8-milestones--phased-steps).
 - **Backend contract** — consumed as-is from TagPulse `openapi.json`; zero backend change
   needed for Phase 0.
 
