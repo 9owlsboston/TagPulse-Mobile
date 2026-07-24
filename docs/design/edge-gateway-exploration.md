@@ -1,6 +1,8 @@
 # Exploration — the phone as a mobile edge *gateway* (forward-looking)
 
-> **Status:** exploration / proposal (not committed scope). **Intent:** capture a design
+> **Status:** exploration / proposal (scope not committed) — **open questions resolved in a
+> 2026-07-24 design discussion** ([outcomes](#design-discussion-outcomes-2026-07-24)); 2
+> backend asks remain (ledger `I-75YC`, `I-9HQA`). **Intent:** capture a design
 > conversation that reframes the phone from an *endpoint device* to an *edge gateway*, so
 > the thinking isn't lost when the roadmap reaches it. **Nothing here changes v1 (Phase
 > 0/1)** — see [Sequencing](#sequencing). Companion to the main design:
@@ -39,6 +41,37 @@ flowchart TB
   BE --> DB([TimescaleDB / Map / UI])
 ```
 <sub>Regenerate: edit the fenced Mermaid above. Context-0 view; boundaries = trust/ownership zones.</sub>
+
+## Design-discussion outcomes (2026-07-24)
+
+A design discussion walked every open question below to a decision, grounded in the
+**actual TagPulse backend code** (`~/ws/TagPulse`, project `tagpulse`). Headline: **the
+gateway is contract-compatible today** for reads and mixed-subject telemetry batches — the
+only hard backend blockers are two authz/schema asks.
+
+| Question | Resolution |
+|---|---|
+| **G-6** app vs platform | **Gateway** = reader + *cellular-backhaul* device (Capability A). Ingest-SDK (Capability B) **deferred**. |
+| **G-1** downstream trust | **Tiered by provisioning channel** — NFC/QR → auto-enroll (possession proof); BLE passive → approve (spoofable, mirror reader `device-registry/{id}/approve`). Stamp provenance (`nfc`/`qr`/`ble-scan`) so the channel can't be forged. |
+| **G-2** mixed-subject batch | **Verified YES** — both `/tag-reads/batch` (`list[TagReadCreate]`, per-row `device_id`) and `/telemetry/readings/ingest` (`TelemetryReadingsBatch.readings`, per-row `subject_kind`+`subject_id`, ≤500/batch) are per-row subject-scoped. `TelemetryReadingIngest.device_id` already documents "the gateway that uplinked an external observation." |
+| **Q-A** gateway principal | **New scoped gateway/device principal** for `/telemetry/readings/ingest` (today `require_role("admin","editor")` — a gateway is neither → **the blocker**), authorised for an approved *set* of subjects, mirroring fixed-reader tag authz. → backend ask #1 (ledger `I-75YC`, refines `I-F0PR`). |
+| **Q-B / G-3** locating downstream | **Generalize external-position to all `subject_kind`s** (additive — RFID readers unaffected: they write `/tag-reads`, and reader positions are *derived read-side* (`source='rfid'`) then unioned with `external_locations`). `source` is a free-form label (usable); **no `priority` field** → use **`accuracy_meters` for arbitration**. Same gateway principal must authorise position writes. → backend ask #2 (ledger `I-9HQA`). |
+| **G-5** footprint/power | **Both deployment modes via a flag** — mounted/powered (always-on foreground relay) vs handheld (opportunistic, foreground-only). Run-mode policy over the shared gateway core. |
+| **G-4** other-app relay (Cap. B) | **Deferred**, trigger: *"a partner app wants to relay through the gateway"* (then needs app allowlist + per-app subject scoping, reusing Q-A's scoped-principal machinery). |
+
+**Two backend asks — the only hard blockers** (both handed to the `tagpulse` backend):
+
+1. **Scoped gateway principal** for `POST /telemetry/readings/ingest` — a gateway is neither
+   `admin` nor `editor`; authorise it to relay for an approved *set/namespace* of downstream
+   subjects (mirror how a fixed reader is authorised for its tags). Ledger `I-75YC`
+   (refines `I-F0PR`).
+2. **Generalize position writes beyond assets** — add `subject_kind`/`subject_id` to
+   `external_locations` (or a sibling table, following the `telemetry_readings` precedent),
+   **additive**, so the gateway can stamp a location on any relayed subject. RFID readers
+   unaffected. Ledger `I-9HQA`.
+
+> Scope note: this resolves the *design* questions; committing build scope is still a
+> roadmap call — **v1 stays phone-as-endpoint** per [Sequencing](#sequencing).
 
 ## Two capabilities hiding in "gateway" (very different scope)
 
@@ -127,6 +160,8 @@ Research — WoT abstraction applied to BLE:
 
 ## Impact on the open questions
 
+> **Resolved 2026-07-24** — see [Design-discussion outcomes](#design-discussion-outcomes-2026-07-24). The reasoning below is the original framing that led there.
+
 - **Q-A (principal) changes shape.** A gateway must write telemetry for subjects it *does
   not own*, so the earlier least-privilege idea ("a device writes *only its own* subject")
   is **too restrictive**. Option A becomes a **gateway-scoped principal** authorised to
@@ -138,6 +173,8 @@ Research — WoT abstraction applied to BLE:
   applied to each downstream subject. B1/B2/B3 stop competing — the gateway does both.
 
 ## New questions this model raises
+
+> **All resolved 2026-07-24** — see [Design-discussion outcomes](#design-discussion-outcomes-2026-07-24). The reasoning below is the original framing.
 
 - **G-1 — downstream subject provisioning & trust.** When the phone sees a new BLE ID, does
   the backend auto-create a device subject, or must it be pre-registered/approved? BLE IDs
