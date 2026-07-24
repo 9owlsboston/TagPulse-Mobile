@@ -34,10 +34,14 @@ openApiGenerate {
     // M0 scope note: the generator's selective `models=Name` filter is broken
     // against this OpenAPI **3.1** spec (it silently emits zero files — 3.1
     // support is still "in development" upstream), so we generate the full model
-    // set. This is still generated-not-hand-written (AGENTS §2) and is a superset
-    // of the MVE ingest models (TagReadCreate {Identity, Location} for
-    // POST /tag-reads/batch); R8 tree-shakes unused models out of release builds,
-    // holding the footprint line. See contract/CONTRACT.md.
+    // set (all 145 component schemas -> 148 files incl. inline enums). This is
+    // still generated-not-hand-written (AGENTS §2) and is a superset of the MVE
+    // ingest models (TagReadCreate {Identity, Location} for POST /tag-reads/batch).
+    // Footprint mitigation is UNVERIFIED/aspirational: R8 would tree-shake the
+    // unused models, but release isMinifyEnabled=false today so it does NOT strip
+    // them yet — making that load-bearing (enable R8 + keep-rules, or trim the
+    // spec) is tracked as ledger C-ZVMF before any release footprint acceptance.
+    // See contract/CONTRACT.md.
     globalProperties.set(
         mapOf(
             "models" to "",

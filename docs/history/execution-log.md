@@ -158,9 +158,13 @@ SHA in `gateway-core/contract/CONTRACT.md` **and** machine-readable
 `gateway-core/build/generated/openapi/` (added to the module's source set; Kotlin/lint tasks
 depend on it). Models only — no HTTP-client runtime (footprint budget). **Deviation:** the
 generator's selective `models=<names>` filter silently emits zero files against this
-**OpenAPI 3.1** spec (3.1 support is "in development" upstream), so all 148 schemas are
-generated (a superset of the MVE ingest models `TagReadCreate`/`Location`/`Identity` for
-`POST /tag-reads/batch`); R8 tree-shakes unused models from release builds. **Serialization:**
+**OpenAPI 3.1** spec (3.1 support is "in development" upstream), so all 145 component schemas
+are generated (148 `.kt` files incl. inline-enum models) — a superset of the MVE ingest
+models `TagReadCreate`/`Location`/`Identity` for `POST /tag-reads/batch`. Footprint mitigation
+is **`unverified`/aspirational**: R8 would strip the unused models, but release
+`isMinifyEnabled=false` today so it does NOT yet — tracked as ledger **`C-ZVMF`** (enable R8 +
+keep-rules or trim the spec before any release footprint acceptance; out of M0 scope).
+**Serialization:**
 the kotlinx.serialization compiler plugin ICE'd on the generated `Map<String, Any>` fields
 (`@Contextual` doesn't cover the `Any` element), so generated models use **jackson**
 annotations (compiles against `jackson-annotations` alone — no databind/okhttp until M4);
@@ -177,3 +181,19 @@ Gradle 8.11.1. `local.properties` (`sdk.dir`) is gitignored (never committed).
 errors=0`), lint clean, `app-debug.apk` produced (~3.7 MB). `docs-drift` clean (below). No
 behavior implemented (no BLE, ELM327, PID, networking, or outbox) — M0 is scaffold only.
 Diff-stage rubber-duck: pending (post-implement gate + verifier next).
+
+### 2026-07-24 — OBDII MVE M0: round-2 docs/comments cleanup (post-verify)
+
+M0 passed the `verifier` ("M0 conforms") + code-review ("no blocking issues") on
+`feat/m0-scaffold` (PR #4). Small **docs/comments-only** follow-up (no build-logic or
+product-code behavior change; `isMinifyEnabled` untouched): (1) recorded the **diff-stage
+rubber-duck attestation** for the M0 diff in `docs/design/obdii-mve-plan.md`
+`## Review attestations` and mirrored it into the PR #4 body (replacing the "pending" note);
+(2) corrected `gateway-core/contract/CONTRACT.md` — generated models use **jackson
+annotations** (`jackson-annotations` at M0), with the jackson **runtime**
+(`jackson-databind` + `jackson-module-kotlin`) added at **M4** — not `kotlinx-serialization-json`;
+(3) fixed the schema count to **145 component schemas** (148 was the generated `.kt` file
+count incl. inline enums); (4) marked the "R8 tree-shakes unused models" footprint claim as
+**`unverified`/aspirational** (release `isMinifyEnabled=false`, so R8 does not strip yet),
+tracked as ledger **`C-ZVMF`**, in `CONTRACT.md`, `gateway-core/build.gradle.kts`, and this
+log. Verified: `docs-drift` clean.

@@ -389,7 +389,15 @@ the `PidCodec` + core contracts are the reusable, portable parts.
   at-least-once vs exactly-once). **This is the round-2 revision** addressing all four —
   each fix code-verified against `~/ws/TagPulse` and cited inline (file:line). Awaiting
   re-review acceptance before the plan gates implementation.
-- **Diff-stage rubber-duck:** n/a — this change is **docs-only** (a plan/proposal). Per
-  AGENTS §6 the docs carve-out applies (no deps/CI/IaC/security/behavioral config touched),
-  **but** this plan will **gate** the Phase-0 implementation, which is *not* carved out —
-  the implementer's diff-stage rubber-duck is required there.
+- **Diff-stage rubber-duck (M0 implementation, `feat/m0-scaffold` / PR #4):** **ran** on the
+  M0 code diff. `verifier` verdict **"M0 conforms"** (scaffold-only, gate green); code-review
+  **"no blocking issues"**. One **Medium, non-blocking** footprint finding — the "R8 strips
+  unused generated models" mitigation is not yet load-bearing (release `isMinifyEnabled=false`)
+  — tracked as ledger **`C-ZVMF`** (enable R8 + keep-rules, or trim the spec, before any
+  release footprint acceptance; deliberately out of M0 scope to avoid an untested release
+  path). Doc-accuracy fixes applied in a round-2 cleanup (serialization dependency line,
+  145 component schemas vs 148 generated files, footprint claim marked `unverified`).
+- **Diff-stage rubber-duck (this plan doc, docs-only):** n/a — this plan/proposal change is
+  **docs-only**. Per AGENTS §6 the docs carve-out applies (no deps/CI/IaC/security/behavioral
+  config touched), **but** this plan **gates** the Phase-0 implementation, which is *not*
+  carved out — the implementer's diff-stage rubber-duck is required there (recorded above).

@@ -47,9 +47,25 @@ Why the full set rather than a hand-picked subset: the generator's selective
 `models=<names>` filter is **broken against this OpenAPI 3.1 spec** — it silently
 emits zero files (3.1 support is flagged "in development" upstream). Generating
 all models is the robust path that still honors the "generated, not hand-written"
-hard rule. Footprint is held by R8 tree-shaking (unused models are stripped from
-release builds); no HTTP-client runtime (okhttp/retrofit) is generated — models
-only, so the only added runtime dependency is `kotlinx-serialization-json`.
+hard rule. No HTTP-client runtime (okhttp/retrofit) is generated — **models
+only**.
+
+Serialization: generated models carry **Jackson annotations** (kotlinx.serialization
+was tried first but its compiler plugin ICEs on the generated `Map<String, Any>`
+fields — see the execution-log). The only added dependency at **M0** is
+`jackson-annotations` (annotations only, no runtime). The Jackson **runtime**
+(`jackson-databind` + `jackson-module-kotlin` — the kotlin module is required for
+Jackson to (de)serialize Kotlin data classes) is added at **M4**, when the HTTP
+client is wired.
+
+> **Footprint — `unverified` / aspirational.** All 145 component schemas are
+> generated but only three (`TagReadCreate`/`Location`/`Identity`) are used by the
+> MVE. The intended mitigation is R8 tree-shaking of the unused models — but this
+> is **not load-bearing today**: release `isMinifyEnabled = false`, so R8 does
+> **not** strip them yet. Making it real (enable R8 + keep-rules, or trim the
+> vendored spec) is tracked as ledger **`C-ZVMF`** and must land before any release
+> footprint acceptance. Enabling release minify is deliberately **out of M0 scope**
+> (avoids shipping an untested release path).
 
 The HTTP client / API surface (endpoint bindings, auth) is deferred to later
 milestones (plan §8, M4).
