@@ -25,6 +25,10 @@ android {
 dependencies {
     // The driver implements the core's seam; it must NOT depend on HTTP / outbox.
     implementation(project(":gateway-core"))
+    // BLE transport + ELM327 session are coroutine/Flow based.
+    implementation(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.junit)
+    // runTest + virtual-time dispatcher drive the session tests without hardware.
+    testImplementation(libs.kotlinx.coroutines.test)
 }

@@ -397,6 +397,10 @@ the `PidCodec` + core contracts are the reusable, portable parts.
   release footprint acceptance; deliberately out of M0 scope to avoid an untested release
   path). Doc-accuracy fixes applied in a round-2 cleanup (serialization dependency line,
   145 component schemas vs 148 generated files, footprint claim marked `unverified`).
+- **Diff-stage rubber-duck (M1 implementation, `feat/m1-ble-rpm`):** **pending** — the
+  post-implement gate is green (`./gradlew lintDebug testDebugUnitTest assembleDebug` →
+  BUILD SUCCESSFUL; 20 unit tests, `failures=0 errors=0`) and the diff is ready for the
+  stage-3 `verifier` + code-review pass. HIL RPM-from-hardware is a manual check (out of CI).
 - **Diff-stage rubber-duck (this plan doc, docs-only):** n/a — this plan/proposal change is
   **docs-only**. Per AGENTS §6 the docs carve-out applies (no deps/CI/IaC/security/behavioral
   config touched), **but** this plan **gates** the Phase-0 implementation, which is *not*
