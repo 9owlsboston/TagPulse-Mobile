@@ -88,3 +88,49 @@ figures web-searched (OBDLink MX+ ~$100-140, Veepeak/Vgate BLE ~$25-50, generic 
 `current-state.md` forward-looking note. Ledger: `D-M8XF` (MVE prospect decision). Verified:
 docs-only; anchors/links resolve. Docs carve-out (no deps/CI/IaC/security/behavioral
 config) — rubber-duck not required.
+
+### 2026-07-24 — Phase-0 MVE plan: OBDII-on-demand
+
+Authored `docs/design/obdii-mve-plan.md` — a file-by-file / milestone build plan for the
+OBDII-on-demand MVE (Android app → BLE ELM327 dongle → read 4 J1979 PIDs → outbox →
+`POST /tag-reads` → Map), planning *within* the already-decided gateway direction, green-zone
+scope, and Android-first call (no relitigation). Re-verified the backend contract in
+`~/ws/TagPulse` (`main` @ `06dde2b`): `TagReadCreate`/`Location` field shapes
+(`Location.accuracy_m`, `source ∈ {gps,fixed,inferred,reader_gnss}`), `tag-reads[/batch]` =
+tenant auth (`get_current_tenant`), and the `provision → approve` flow. Surfaced one real
+contract gap: `POST /devices/provision` returns `{device_id, status, message}` with **no
+token**, while `tag-reads` auth is tenant-scoped — so how an approved handset authenticates
+ingest is an open question (OQ-1, blocks milestone M4). Plan covers goal/acceptance,
+scope in/out (mirrors I-75YC / I-9HQA / always-on / fan-in / DTC-VIN exclusions),
+core/driver architecture, PID→`sensor_data` mapping, enrolment/binding, Android BLE
+specifics (`unverified` where dongle-specific), offline outbox, 6 milestones (M0 scaffold …
+M5 Map E2E) each with a verify signal + the `./gradlew lintDebug testDebugUnitTest
+assembleDebug` gate, and risks/open questions. Verified: docs-only; `docs-drift` clean
+(below). Docs/plan carve-out for *this* change; the plan itself gates Phase-0 implementation
+(rubber-duck required there). Plan-stage rubber-duck: pending (recorded in the doc's
+`## Review attestations`).
+
+### 2026-07-24 — OBDII MVE plan: round-2 revision (plan-stage rubber-duck fixes)
+
+Revised `docs/design/obdii-mve-plan.md` on branch `docs/obdii-mve-plan` (PR #3) to resolve
+4 blocking plan-stage rubber-duck findings, each re-verified against `~/ws/TagPulse` and
+cited file:line in the doc. **Fix 1 (ingest auth):** confirmed `tpd_` device tokens are
+never verified — `get_current_user` (`user_auth.py:137-210`) only routes `tp_` user API
+keys / JWT / `X-Tenant-ID`, and `tpd_` (mint at `user_auth.py:101`, `rotate-token`
+`devices.py:116-144`, `token_hash` `database.py:147`) misroutes to JWT decode → 401.
+Decided: Phase-0 authenticates ingest with an out-of-band tenant user API key
+(`tp_{slug}_…`, Bearer); added the security caveat (tenant-scoped, no per-device
+revocation) and a `## Backend dependencies (post-MVE)` note pointing at ledger `I-K6D1`
+(distinct from `I-75YC`). **Fix 2 (batch):** switched every drain/acceptance ref to
+`POST /tag-reads/batch` → `{ingested, rejected}` (`ingestion.py:38-52`); kept single
+`POST /tag-reads` only for manual one-off testing. **Fix 3 (Map binding):** documented the
+required `binding_kind='device'` binding (`tr.tag_id = b.binding_value`,
+`migrations/versions/057_epc_binding_match_hex.py`; enum `schemas.py:890`) as a setup
+prerequisite in scope-in + §5, and added acceptance A7 + an E2E fixture asserting
+`GET /assets/current-locations` (`assets.py:130-145`) returns the vehicle. **Fix 4
+(retry):** stated at-least-once explicitly (backend assigns fresh UUID per insert,
+`ingestion/service.py:258`; no client event id), removed the exactly-once claim, moved
+idempotency to a future backend ask. Updated milestones M4/M5, open questions (OQ-1/OQ-2
+resolved, OQ-5 added), and `## Review attestations` (round 1 → 4 findings → this round-2
+revision). Verified: docs-only; `docs-drift` clean. Docs/plan carve-out for this change;
+the plan gates Phase-0 implementation (rubber-duck required there).
