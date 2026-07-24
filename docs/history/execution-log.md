@@ -88,3 +88,24 @@ figures web-searched (OBDLink MX+ ~$100-140, Veepeak/Vgate BLE ~$25-50, generic 
 `current-state.md` forward-looking note. Ledger: `D-M8XF` (MVE prospect decision). Verified:
 docs-only; anchors/links resolve. Docs carve-out (no deps/CI/IaC/security/behavioral
 config) — rubber-duck not required.
+
+### 2026-07-24 — Phase-0 MVE plan: OBDII-on-demand
+
+Authored `docs/design/obdii-mve-plan.md` — a file-by-file / milestone build plan for the
+OBDII-on-demand MVE (Android app → BLE ELM327 dongle → read 4 J1979 PIDs → outbox →
+`POST /tag-reads` → Map), planning *within* the already-decided gateway direction, green-zone
+scope, and Android-first call (no relitigation). Re-verified the backend contract in
+`~/ws/TagPulse` (`main` @ `06dde2b`): `TagReadCreate`/`Location` field shapes
+(`Location.accuracy_m`, `source ∈ {gps,fixed,inferred,reader_gnss}`), `tag-reads[/batch]` =
+tenant auth (`get_current_tenant`), and the `provision → approve` flow. Surfaced one real
+contract gap: `POST /devices/provision` returns `{device_id, status, message}` with **no
+token**, while `tag-reads` auth is tenant-scoped — so how an approved handset authenticates
+ingest is an open question (OQ-1, blocks milestone M4). Plan covers goal/acceptance,
+scope in/out (mirrors I-75YC / I-9HQA / always-on / fan-in / DTC-VIN exclusions),
+core/driver architecture, PID→`sensor_data` mapping, enrolment/binding, Android BLE
+specifics (`unverified` where dongle-specific), offline outbox, 6 milestones (M0 scaffold …
+M5 Map E2E) each with a verify signal + the `./gradlew lintDebug testDebugUnitTest
+assembleDebug` gate, and risks/open questions. Verified: docs-only; `docs-drift` clean
+(below). Docs/plan carve-out for *this* change; the plan itself gates Phase-0 implementation
+(rubber-duck required there). Plan-stage rubber-duck: pending (recorded in the doc's
+`## Review attestations`).
