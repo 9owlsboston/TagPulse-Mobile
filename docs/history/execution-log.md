@@ -134,3 +134,46 @@ idempotency to a future backend ask. Updated milestones M4/M5, open questions (O
 resolved, OQ-5 added), and `## Review attestations` (round 1 → 4 findings → this round-2
 revision). Verified: docs-only; `docs-drift` clean. Docs/plan carve-out for this change;
 the plan gates Phase-0 implementation (rubber-duck required there).
+
+### 2026-07-24 — OBDII MVE M0 (Scaffold): Android project + core/driver seam + generated client
+
+Implemented milestone **M0** of `docs/design/obdii-mve-plan.md` (§8) on branch
+`feat/m0-scaffold` (PR #4). **Scaffolded** an Android Gradle project (Kotlin DSL) where the repo
+previously had no app code: root `build.gradle.kts` + `settings.gradle.kts`, a Gradle
+**wrapper pinned to 8.11.1**, a version catalog (`gradle/libs.versions.toml`), an `:app`
+application module (compileSdk/targetSdk 35, minSdk 26, AGP 8.7.3, Kotlin 2.0.21, JDK 17),
+and two library modules **`:gateway-core`** and **`:obdii`**. Defined the core/driver
+**seam** (plan §3): `GatewayDriver { discover → read → normalize }` + the normalized
+`Observation { subject, source, timestamp, payload, location }` model (with `Subject`,
+`Source`, `Modality`, `GeoLocation`, `DiscoveredDevice`, `DriverReading`) in `:gateway-core`;
+`:obdii` carries an `ObdiiDriver` stub implementing the seam with `TODO()` bodies (no
+BLE/PID behavior — that lands M1–M2).
+
+**Generated backend client (AGENTS §2 hard rule):** vendored the backend spec to
+`gateway-core/contract/openapi.json` (from `~/ws/TagPulse` `openapi.json`, backend commit
+**`06dde2b9b875f6f66ee817a2760439f7d3f400b0`**, spec `info.version 0.1.0`); recorded the
+SHA in `gateway-core/contract/CONTRACT.md` **and** machine-readable
+`gateway-core/contract/contract.properties`. Wired the `org.openapi.generator` Gradle plugin
+(task `openApiGenerate`) to codegen Kotlin models from the vendored spec into
+`gateway-core/build/generated/openapi/` (added to the module's source set; Kotlin/lint tasks
+depend on it). Models only — no HTTP-client runtime (footprint budget). **Deviation:** the
+generator's selective `models=<names>` filter silently emits zero files against this
+**OpenAPI 3.1** spec (3.1 support is "in development" upstream), so all 148 schemas are
+generated (a superset of the MVE ingest models `TagReadCreate`/`Location`/`Identity` for
+`POST /tag-reads/batch`); R8 tree-shakes unused models from release builds. **Serialization:**
+the kotlinx.serialization compiler plugin ICE'd on the generated `Map<String, Any>` fields
+(`@Contextual` doesn't cover the `Any` element), so generated models use **jackson**
+annotations (compiles against `jackson-annotations` alone — no databind/okhttp until M4);
+`Observation.payload` is a plain `Map<String, Any?>` aligning with `TagReadCreate.sensor_data`.
+
+**Toolchain setup (this session):** no Android SDK was present, so installed one — downloaded
+Android commandline-tools (`commandlinetools-linux-11076708`), set `ANDROID_HOME=~/android-sdk`,
+accepted licenses (`sdkmanager --licenses`), and installed `platform-tools`,
+`platforms;android-35`, `build-tools;35.0.0`. Bootstrapped the wrapper with a downloaded
+Gradle 8.11.1. `local.properties` (`sdk.dir`) is gitignored (never committed).
+
+**Verified — gate GREEN locally:** `./gradlew clean lintDebug testDebugUnitTest assembleDebug`
+→ `BUILD SUCCESSFUL`; unit tests pass (gateway-core 2, obdii 1, app 1 — all `failures=0
+errors=0`), lint clean, `app-debug.apk` produced (~3.7 MB). `docs-drift` clean (below). No
+behavior implemented (no BLE, ELM327, PID, networking, or outbox) — M0 is scaffold only.
+Diff-stage rubber-duck: pending (post-implement gate + verifier next).

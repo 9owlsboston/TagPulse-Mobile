@@ -46,3 +46,15 @@ logs/
 tmp/
 .tmp/
 .cache/
+
+# --- Android / Gradle ---
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+*.hprof
+# Signing material — never commit (AGENTS §2)
+*.keystore
+*.jks
