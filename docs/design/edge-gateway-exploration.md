@@ -204,3 +204,52 @@ Research — WoT abstraction applied to BLE:
   `tag_reads` / `telemetry` as-is.
 - **Capability B (ingest SDK)** → a **separate product/strategic decision** (G-6), not a
   feature.
+
+## MVE prospect — OBDII-on-demand (candidate first gateway modality)
+
+> **Status:** prospect / candidate MVE (not committed scope). A cheap, end-to-end
+> experiment to validate the gateway thesis with near-zero backend dependency. Naming a
+> prospect here does **not** commit Phase-2 scope — it respects [Sequencing](#sequencing).
+
+**Thesis it proves:** a phone can act as a field gateway — read a downstream device over
+Bluetooth and relay its data to TagPulse — via the generalized *gateway core + per-modality
+driver* pattern, in the low-risk **opportunistic** (on-demand, foreground) deployment mode.
+
+**The vertical slice (the actual MVE):**
+
+> BLE-connect to an OBD-II dongle → read a handful of PIDs (RPM, speed, coolant temp,
+> fuel %) → relay to TagPulse → see it on the Map.
+
+**Why it's a strong first modality:**
+
+- **Green-zone / near-zero backend.** Relay the on-demand snapshot via the existing
+  `POST /tag-reads` path — each read carries the PID snapshot in `sensor_data`, and the
+  device's GPS can ride in the `location` sub-model → **no backend change** to demo. The
+  clean telemetry model (`POST /telemetry/readings/ingest`, ledger `I-75YC`) is a *later*
+  upgrade, not an MVE blocker.
+- **Vehicle = asset** → sidesteps the position-generalization ask (`I-9HQA`) entirely;
+  asset-scoped endpoints work as-is.
+- **Opportunistic mode** (per [Design-discussion outcomes / G-5](#design-discussion-outcomes-2026-07-24))
+  — user-initiated, foreground → no always-on background, battery, or iOS-suspension fight.
+- Exercises the **core + `obdii` driver** (`discover → read → normalize`) end-to-end on
+  real hardware.
+
+**Hardware — write to the common denominator, don't lock in:**
+
+- Target the public **ELM327 command set** (SAE J1979 PIDs). Every dongle below speaks it,
+  so the driver is portable.
+- **MVE dongle: a cheap _BLE_ adapter (~$25–30)** — e.g. Vgate iCar Pro BLE or Veepeak
+  OBDCheck BLE+. **BLE is mandatory for iOS** (iOS can't talk classic-Bluetooth SPP without
+  MFi); avoid $10–20 generic ELM327 clones (Android-only, unreliable). `unverified` pricing
+  (2026 street prices).
+- **Production upgrade path:** OBDLink MX+ (~$100–140; MFi/iOS, official SDK, faster, more
+  robust) is an **ELM327 superset** → swap in later **without rewriting the driver**.
+
+**Platform-first: Android** — resolves open question **Q-C**
+([`mobile-client.md`](mobile-client.md#open-questions)) for this slice. Android iterates
+faster and tolerates more dongles; port the driver to iOS afterward on a confirmed-BLE
+adapter.
+
+**Deliberately out of MVE scope:** telemetry-model cleanliness (`I-75YC`), non-asset
+subjects (`I-9HQA`), always-on/mounted mode, multi-subject fan-in at scale, and DTC/VIN
+handling (DTCs are *events*, VIN is *identity* — outside the numeric-PID happy path).

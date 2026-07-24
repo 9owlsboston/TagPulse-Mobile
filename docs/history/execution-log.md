@@ -72,3 +72,19 @@ tiered downstream trust by provisioning channel; `D-CB5W` dual deployment-mode f
 Verified: docs-only change; internal anchors (`#design-discussion-outcomes-2026-07-24`) and
 cross-doc links resolve; no code touched. Docs carve-out (no deps/CI/IaC/security/behavioral
 config) — rubber-duck not required.
+
+### 2026-07-24 — MVE prospect: OBDII-on-demand (candidate first gateway modality)
+
+Captured a candidate MVE for the gateway direction after an ideation thread (OBDII scanner
+→ downstream sensor devices). Added a `## MVE prospect — OBDII-on-demand` section to
+`edge-gateway-exploration.md`: the vertical slice (BLE-connect dongle → read PIDs → relay →
+Map), why it's low-risk (green-zone via `tag_reads.sensor_data`/`location`, vehicle=asset so
+sidesteps `I-9HQA`, opportunistic mode so no background/battery/iOS-suspension fight), the
+hardware strategy (write to the public ELM327 command set; MVE on a ~$25-30 BLE dongle —
+BLE mandatory for iOS; production upgrade to OBDLink MX+ as an ELM327 superset without
+rewriting the driver), and platform-first = Android (resolving Q-C for this slice). Pricing
+figures web-searched (OBDLink MX+ ~$100-140, Veepeak/Vgate BLE ~$25-50, generic ELM327
+~$10-20 Android-only) and marked `unverified` in-doc as street prices. Reconciled
+`current-state.md` forward-looking note. Ledger: `D-M8XF` (MVE prospect decision). Verified:
+docs-only; anchors/links resolve. Docs carve-out (no deps/CI/IaC/security/behavioral
+config) — rubber-duck not required.
