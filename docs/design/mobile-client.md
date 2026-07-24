@@ -153,9 +153,32 @@ Targets, not yet measured (`unverified` until Phase 0 builds exist):
   `admin`/`editor`; a provisioned **device** is neither. Does the phone authenticate as a
   device (and do we need a device-scoped telemetry ingest path), or as a user? Resolve
   before Phase 1 telemetry. **[backend decision]**
+  - **Leaning Option A** (device principal + device-scoped ingest path) — consistent with
+    `telemetry_readings.subject_kind='device'` and avoids putting a privileged
+    `admin`/`editor` user credential on a field handset.
+  - **TODO (backend, prerequisite): MQTT-impact analysis.** The fixed RFID readers already
+    write device telemetry via MQTT, so Option A is likely additive — but confirm before
+    committing: (1) does the RFID MQTT client already write `subject_kind='device'` rows?
+    (2) is ingest authorization shared between the HTTP and MQTT paths, or separate? Only a
+    shared-authz refactor would touch the existing reader fleet.
 - **Q-B — asset binding.** `external-position` is per-`asset_id`. In Tracker mode, what is
-  the phone bound to — a dedicated "phone asset", the vehicle asset, or the device itself?
-  (`external_locations` is asset-keyed today.)
+  the phone bound to — a dedicated "phone asset" (**B1**), the vehicle asset (**B2**), or
+  the device itself (**B3**)? (`external_locations` is asset-keyed today.)
+  - Use-case driven: **B1** = MDM / inventory-of-phones (zero backend change); **B2** =
+    fleet (but vehicles usually already have built-in telematics → phone is a *backup/
+    gap-filler* → raises a position-**provenance** question, see exploration G-3); **B3** =
+    device-keyed position (needs a backend schema change, but is the coherent endpoint if
+    Q-A goes Option A).
+  - **Leaning B1 to ship → B3 as the documented target.** If the gateway model (below) is
+    adopted, Q-B stops being either/or: the gateway both tracks *itself* and *location-
+    stamps every downstream subject it reads*.
+
+> **Forward-looking:** a broader conversation reframed the phone from an edge *device* to a
+> mobile edge **gateway** (fronting BLE sensors + relaying for other on-device apps via an
+> on-device SDK), and how a **generalized gateway core + per-modality drivers** could make
+> it portable across gateway types. Captured — with industry prior art and the new
+> questions G-1…G-6 it raises — in
+> [`edge-gateway-exploration.md`](edge-gateway-exploration.md). **Not v1 scope.**
 - **Q-C — first platform.** Ship iOS and Android together, or one first for the Phase 0
   spike?
 - **Q-D — background tracking policy.** Continuous vs significant-change vs geofence-wake

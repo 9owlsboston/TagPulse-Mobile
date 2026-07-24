@@ -1,6 +1,6 @@
 # Current state — TagPulse-Mobile
 
-> **Snapshot:** 2026-07-23. The single, always-current answer to *"where is this
+> **Snapshot:** 2026-07-24. The single, always-current answer to *"where is this
 > project right now?"* — a **supplement to the README**, not a design-doc rollup.
 > Lead with a human summary (a short plain-English paragraph a newcomer reads
 > top-to-bottom *without* opening links, then a diagram); keep the rest thin —
@@ -54,3 +54,12 @@ One line per area, each linking to the doc that owns the detail.
 - **Q-D** background tracking policy (battery vs fidelity).
 
 See [`docs/design/mobile-client.md`](design/mobile-client.md#open-questions).
+
+**Forward-looking (not v1 scope):** an exploration reframes the phone as a mobile edge
+**gateway** (BLE/sensor aggregation + cellular backhaul). A **2026-07-24 design discussion**
+walked its open questions (G-1…G-6, Q-A/Q-B) to decisions grounded in the backend code:
+the gateway is **contract-compatible today** for reads + mixed-subject telemetry batches,
+with **two hard backend asks** remaining — a **scoped gateway principal** for telemetry
+ingest (ledger `I-75YC`, refines `I-F0PR`) and **generalizing external-position to all
+subject kinds** (ledger `I-9HQA`). See
+[`docs/design/edge-gateway-exploration.md`](design/edge-gateway-exploration.md#design-discussion-outcomes-2026-07-24).
