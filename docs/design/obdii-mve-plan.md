@@ -18,8 +18,8 @@ Prove the phone-as-field-gateway thesis with the cheapest possible end-to-end sl
 
 > **Android app** BLE-connects a **~$25–30 ELM327-over-BLE OBD-II dongle** → reads four
 > J1979 PIDs (RPM, speed, coolant temp, fuel %) → normalizes a snapshot → drops it in a
-> durable **outbox** → drains it as a batched `POST /tag-reads` (the phone's provisioned
-> **device_id**, GPS in the `location` sub-model) → the read appears on the existing
+> durable **outbox** → drains it as a batched **`POST /tag-reads/batch`** (the phone's
+> provisioned **device_id**, GPS in the `location` sub-model) → the read appears on the existing
 > **Map**.
 
 It is deliberately **green-zone**: it uses the *existing* `tag-reads` ingest path with
@@ -42,7 +42,7 @@ flowchart LR
     GPS --> CORE
   end
   DONGLE -->|"BLE GATT<br/>ELM327 AT/PID (southbound)"| DRV
-  CORE -->|"batched HTTPS<br/>POST /tag-reads (northbound · exists)"| API([TagPulse backend])
+  CORE -->|"batched HTTPS<br/>POST /tag-reads/batch (northbound · exists)"| API([TagPulse backend])
   API --> MAP([Admin UI: Map / Tag Reads])
   ENROLL([Provisioning key +<br/>device-registry approve]) -. "enrol → credential" .-> CORE
 ```
@@ -58,13 +58,14 @@ BLE dongle, an operator can:
 
 | # | Acceptance criterion | Verification signal |
 |---|---|---|
-| A1 | Enrol the handset once (provisioning key → `device-registry` approve) and hold an ingest credential in the Android Keystore. | `POST /devices/provision` returns `device_id`; admin approve flips status → `active`; credential present in secure store, never in logs. |
+| A1 | Enrol the handset (provision → approve for the `device_id`), and provision a **tenant user API key (`tp_{slug}_…`)** out-of-band onto the device; hold both in the Android Keystore. Ingest is authenticated with **`Authorization: Bearer tp_{slug}_…`** — *not* a device token (see §5 🚩). | `POST /devices/provision` returns `device_id`; admin approve flips status → `active`; a `POST /tag-reads/batch` with the tenant key returns `201`; credentials present in secure store, never in logs. |
 | A2 | Discover + BLE-connect the dongle and complete the ELM327 init handshake. | Driver logs `ATZ`/`ATE0`/`ATSP0` round-trip; connection state = `connected`. |
 | A3 | Read all four PIDs in one on-demand snapshot and normalize them to engineering units. | Unit test: canned ELM327 hex frames → expected `{rpm, speed_kph, coolant_temp_c, fuel_level_pct}`; a real read shows plausible values. |
 | A4 | Persist the snapshot to the durable outbox and survive a process restart with it still queued. | Instrumented test: enqueue → kill process → relaunch → item still pending. |
-| A5 | Drain the outbox as a batched `POST /tag-reads` and get a `201`; item marked sent, not re-sent. | HTTP `201`; backend returns `{ingested: N, rejected: 0}`; outbox row transitions `pending → sent` exactly once. |
+| A5 | Drain the outbox as a batched **`POST /tag-reads/batch`** and get a `201`. Delivery is **at-least-once** (§4/§7): a lost `201` may re-send and duplicate — acceptable for the MVE. | HTTP `201`; backend returns **`{ingested: N, rejected: 0}`** (`ingestion.py:38-52`); outbox row transitions `pending → sent`; a forced retry produces a duplicate row (documented, not a failure). |
 | A6 | See the read on the existing TagPulse **Map** / **Tag Reads** grid at the phone's GPS location. | Manual: the pin appears; the PID snapshot is present in the row's `sensor_data`. |
-| A7 | The per-platform gate is green. | `./gradlew lintDebug testDebugUnitTest assembleDebug` exits 0. |
+| A7 | **Asset link is testable:** after a relayed read, the vehicle appears in the current-locations view (requires a `binding_kind='device'` binding — §5). | E2E fixture: seed a vehicle asset + a `binding_kind='device'` binding whose `binding_value` = the `tag_id` the phone reports; relay a read; assert `GET /assets/current-locations` (`assets.py:130-145`) returns the vehicle at the read's location. |
+| A8 | The per-platform gate is green. | `./gradlew lintDebug testDebugUnitTest assembleDebug` exits 0. |
 
 **Non-acceptance (explicitly not required):** clean telemetry model, non-asset subjects,
 background operation, multi-vehicle fan-in, DTC/VIN. See §2.
@@ -79,9 +80,13 @@ background operation, multi-vehicle fan-in, DTC/VIN. See §2.
   thin **`obdii` driver** (`discover → read → normalize`) behind a common interface.
 - BLE GATT transport to an **ELM327-over-BLE** dongle; the J1979 numeric-PID happy path
   for **exactly four PIDs**: `010C` RPM, `010D` speed, `0105` coolant temp, `012F` fuel %.
-- Enrolment via the existing provision → approve flow; credential in Android Keystore.
-- Relay via **`POST /tag-reads`** (single + batch drain), snapshot in `sensor_data`, GPS
-  in the `location` sub-model.
+- Enrolment via the existing provision → approve flow; **plus an out-of-band tenant user
+  API key (`tp_{slug}_…`)** as the ingest credential (§5 🚩); both in Android Keystore.
+- **A `binding_kind='device'` binding** (vehicle asset ↔ the `tag_id` the phone reports)
+  registered as a setup prerequisite — **required** for the vehicle to surface on the
+  Map / current-locations view (§5, Fix 3; `binding_kind` enum `schemas.py:890`).
+- Relay via **`POST /tag-reads/batch`** (batch drain; single `POST /tag-reads` only for
+  manual one-off testing), snapshot in `sensor_data`, GPS in the `location` sub-model.
 
 ### Out of scope (mirrors the prospect's exclusions)
 - **Clean telemetry model** `POST /telemetry/readings/ingest` — admin/editor-gated, needs
@@ -153,10 +158,10 @@ source: Literal["gps","fixed","inferred","reader_gnss"] = "gps"}`.
 | `TagReadCreate` field | MVE value | Note |
 |---|---|---|
 | `device_id` | the **phone-gateway's** provisioned device UUID | The gateway is the reporting device (§5). Obtained at enrolment, cached in secure store. |
-| `tag_id` | the **vehicle asset's** registered tag/label id | Binds the read to the vehicle asset. **Assumption `unverified`:** the vehicle asset already has a tag registered in TagPulse; the operator selects/enters it at bind time (§5). If absent, the read still lands + shows on the Map via `location`, just unlinked. |
+| `tag_id` | the **vehicle asset's** `binding_value` for its `binding_kind='device'` binding | **Required for Map visibility (Fix 3).** The current-locations view joins `binding_kind='device' AND tr.tag_id = b.binding_value` (`migrations/versions/057_epc_binding_match_hex.py`). EPC/TID bindings would need `identity.epc`/`identity.tid` (which the MVE leaves unset) → an EPC-bound vehicle would **never** appear. So the vehicle **must** carry a `device`-kind binding whose value = this `tag_id` (registered at setup, §5). If the binding is absent, the read still lands + shows a raw pin via `location`, but is **not linked to the asset**. |
 | `timestamp` | snapshot capture time (UTC) | Clock hygiene: backend rejects >24 h old / >5 min future and dead-letters them (edge-device-contract §3.5) — the outbox drops stale items locally first (mirrors [`mobile-client.md` Time hygiene](mobile-client.md#architecture)). |
 | `sensor_data` | the **PID snapshot JSON** (below) | The green-zone home for the OBD payload — no backend change. |
-| `location` | phone GPS fix → `{latitude, longitude, accuracy_m, source:"gps"}` | Drives the Map pin (A6). On-demand single fix, not a track. |
+| `location` | phone GPS fix → `{latitude, longitude, accuracy_m, source:"gps"}` | Drives the Map pin (A6/A7). On-demand single fix, not a track. |
 | `signal_strength` | *(optional)* BLE RSSI of the dongle link | Free, mildly useful; omit if noisy. |
 | `identity` / `tag_data` / `reader_antenna` | unused (MVE) | RFID-specific; leave `null`. |
 
@@ -188,6 +193,14 @@ tell it came from the OBD modality):
 `tag_read` row (or a small batch if several PIDs are split). Not a stream; no sampling loop
 in the MVE.
 
+**Delivery semantics — at-least-once (Fix 4).** `TagReadCreate` carries **no client event
+id**, and the backend assigns a fresh server-side UUID per insert (`id=uuid.uuid4()`,
+`src/tagpulse/ingestion/service.py:258`). So a lost `201` on retry **duplicates** the
+snapshot — **exactly-once is unachievable** without a backend idempotency key. The MVE
+**accepts at-least-once** delivery (a duplicate PID snapshot is harmless). Client-side
+dedup / idempotency is **out of scope** → a future backend ask (idempotency key on ingest);
+see [Backend dependencies (post-MVE)](#backend-dependencies-post-mve).
+
 ---
 
 ## 5. Enrolment / binding flow
@@ -198,33 +211,66 @@ vehicle). Both use *existing* backend primitives (re-verified in
 
 **Handset enrolment (once per phone):**
 1. `POST /devices/provision` with an `X-Provisioning-Key` header → returns
-   `{device_id, status: "pending", message}`. The key is a **tenant** provisioning key,
-   entered once at setup (QR scan is the intended UX, per `mobile-client.md`).
+   `{device_id, status: "pending", message}` — **no token** (`provisioning.py`). The key is
+   a **tenant** provisioning key, entered once at setup (QR scan is the intended UX, per
+   `mobile-client.md`).
 2. Admin approves: `POST /device-registry/{device_id}/approve` (admin-only, `204`) →
    status `active`.
-3. Cache `device_id` + the ingest credential in the **Android Keystore** — never in
-   source, resource files, or logs (AGENTS §2).
+3. **Ingest credential (Fix 1 — DECIDED):** the handset authenticates its
+   `POST /tag-reads/batch` with an **out-of-band tenant user API key (`tp_{slug}_…`)**,
+   sent as `Authorization: Bearer tp_{slug}_…`, provisioned manually onto the device at
+   setup. Cache `device_id` **and** that key in the **Android Keystore** — never in source,
+   resource files, or logs (AGENTS §2).
 
-> 🚩 **Open contract gap (`unverified` — must resolve before A5).** `POST /devices/provision`
-> returns **no token** — only `{device_id, status, message}`. Ingest auth on `tag-reads`
-> is **tenant-scoped** (`get_current_tenant` → `get_current_user`: JWT / `X-Tenant-ID`
-> API-key header), *not* a device-issued bearer. **So how does an approved handset obtain
-> the credential it presents on `POST /tag-reads`?** Candidates: (a) a tenant API key
-> provisioned out-of-band and stored with the `device_id`; (b) a device-token issuance step
-> not present in the `provision`/`approve` responses. **This is the one enrolment unknown
-> the MVE must pin down with the backend before M4.** It does not block M0–M3 (which mock
-> the client).
+> 🚩 **Why a tenant key, not a device token (code-verified).** The device-token machinery
+> exists — `generate_device_token()` mints a `tpd_{slug}_…` token (`user_auth.py:101`),
+> `POST /device-registry/{id}/rotate-token` sets `DeviceModel.token_hash`
+> (`devices.py:116-144`, `database.py:147`) — **but ingest auth never verifies it.**
+> `get_current_user` (`user_auth.py:137-210`) only routes `Bearer tp_…` (user API key) or a
+> JWT (any `Bearer` **not** starting with `tp_`) or the legacy `X-Tenant-ID` header. A
+> `tpd_` token does **not** start with `tp_`, so it is misrouted to JWT decode → `401`.
+> Therefore Phase-0 uses the **tenant user API key** workaround.
+>
+> **Security caveat (accepted for the MVE):** a `tp_{slug}_…` key is **tenant-scoped and
+> broad** — it authorizes far more than one device's ingest, and there is **no per-device
+> revocation** (rotating it affects every holder). Keep it in the Keystore, treat it as
+> sensitive, and scope its blast radius operationally (dedicated low-privilege user where
+> possible). The proper fix is post-MVE — see
+> [Backend dependencies (post-MVE)](#backend-dependencies-post-mve) (ledger **`I-K6D1`**).
 
 **Dongle ↔ vehicle-asset binding (per vehicle):**
 - The **BT pairing/bonding** of phone↔dongle is a **possession proof** → per the tiered
   trust decision (`D-AZ5E`, exploration G-1), a bonded dongle can **auto-bind**; no
   BLE-passive approval step is needed for this modality.
-- Binding = associating the dongle (BLE address) with a **vehicle asset**, referenced on
-  the read via `tag_id` (§4). For the MVE this is a **local, operator-confirmed** mapping
-  (select/enter the vehicle's tag at first connect); a backend-side dongle registry is out
-  of scope.
+- **Required backend binding (Fix 3 — DECIDED):** the vehicle asset **must** carry an
+  `asset_tag_bindings` row with **`binding_kind='device'`** whose `binding_value` equals the
+  `tag_id` the phone reports (§4). The current-locations view resolves the asset via
+  `binding_kind='device' AND tr.tag_id = b.binding_value`
+  (`migrations/versions/057_epc_binding_match_hex.py`); an EPC/TID binding would require
+  `identity.epc`/`identity.tid` (unset in the MVE) and so would **never** surface the
+  vehicle. Registering this `device`-kind binding is an explicit **enrolment/setup
+  prerequisite** (admin action; `binding_kind` enum = `Literal["epc","tid","device"]`,
+  `schemas.py:890`).
+- Associating the dongle (BLE address) with the vehicle's `tag_id` is, on the phone side, a
+  **local, operator-confirmed** mapping (select/enter the vehicle at first connect); a
+  backend-side dongle registry is out of scope (OQ-3).
 - **Provisioning key source:** the tenant admin issues it (same key that provisions any
   device); delivered to the handset via QR at setup.
+
+## Backend dependencies (post-MVE)
+
+Not MVE blockers — the MVE ships on the workarounds above — but the clean fixes, handed to
+the `tagpulse` backend:
+
+- **`I-K6D1` — wire `tpd_` device-token verification into ingest auth**, and have
+  `provision`/`approve` **mint + return** the device token (today they return neither). This
+  replaces the tenant-key workaround (Fix 1) with a per-device, revocable credential.
+  **Distinct from `I-75YC`** (which is the *telemetry*-ingest scoped-gateway principal, a
+  different endpoint + authz surface).
+- **Idempotency key on ingest** (future ask) — a client-supplied event id so retries
+  dedup, upgrading Fix 4's at-least-once toward exactly-once.
+- (Already tracked) **`I-75YC`** scoped gateway principal for `POST /telemetry/readings/ingest`;
+  **`I-9HQA`** position-generalization — both out of MVE scope (§2).
 
 ---
 
@@ -261,13 +307,15 @@ that is the core's whole reason to exist and what future modalities reuse.
   explicit **`subject` + `source`** is the [cheap gateway hedge](edge-gateway-exploration.md#sequencing).
 - **Write-through:** the "Scan vehicle" action writes the snapshot inline and returns
   immediately; a drainer sends it. Process-restart safe (A4).
-- **Drain:** batched `POST /tag-reads` (body = `list[TagReadCreate]`; batch cap is 500
-  server-side — irrelevant at MVE volume). Response `{ingested, rejected}`; mark sent rows
-  `sent`, keep `rejected` for inspection.
+- **Drain:** batched **`POST /tag-reads/batch`** (body = `list[TagReadCreate]`; batch cap is
+  500 server-side — irrelevant at MVE volume). Response **`{ingested, rejected}`**
+  (`ingestion.py:38-52`); mark sent rows `sent`, keep `rejected` for inspection.
 - **Retry/backoff:** full-jitter exponential backoff on network/5xx; a bounded attempt
-  count then park as `failed` (surfaced in the UI, not silently dropped). Idempotency via a
-  client-generated item id so a retried batch can't double-write (mirrors
-  [`mobile-client.md` Uploader](mobile-client.md#architecture)).
+  count then park as `failed` (surfaced in the UI, not silently dropped). **Delivery is
+  at-least-once (Fix 4):** the backend assigns its own row UUID and accepts no client event
+  id, so a lost `201` on retry duplicates the snapshot — accepted for the MVE (a repeated
+  PID snapshot is harmless). No local "idempotency" claim; true dedup is a post-MVE backend
+  ask (see [Backend dependencies](#backend-dependencies-post-mve)).
 - **Caps (footprint budget):** cap by **size + age** — drop items older than the backend's
   24 h clock window *before* sending (avoids guaranteed dead-letter); bound total rows so a
   long offline stint can't grow unbounded. Exact numbers `unverified` until Phase-0 builds
@@ -287,8 +335,8 @@ milestone from M0 on.
 | **M1 — BLE connect + one PID** | `BleTransport` + `Elm327Session`: connect the dongle, init handshake, read **RPM (`010C`)** only, log the value. | Manual HIL: RPM logged from a real dongle (or scripted BLE mock); connection state observable. |
 | **M2 — Full snapshot + normalize** | Read all four PIDs; `PidCodec` decodes to engineering units; assemble the `sensor_data` snapshot model. | Unit test: canned hex frames → expected `{rpm, speed_kph, coolant_temp_c, fuel_level_pct}` (incl. `NO DATA`/error frames). |
 | **M3 — Normalize → outbox** | Snapshot → `Observation` → durable Room outbox; restart-safe; NOT yet sent. | Instrumented test A4 (enqueue → kill → relaunch → still pending). |
-| **M4 — Enrolment + relay** | Provision→approve, credential in Keystore, batcher drains → `POST /tag-reads`. **Resolves the §5 credential gap first.** | HTTP `201` + `{ingested:1, rejected:0}`; outbox row `pending → sent` once (A1, A5). |
-| **M5 — Map confirmation (E2E)** | Wire the "Scan vehicle" UI action end-to-end; run the full slice against a dev tenant. | Manual E2E: pin on the Map at the phone's GPS; PID snapshot present in the Tag Reads row (A6). |
+| **M4 — Enrolment + relay** | Provision→approve for `device_id`; **tenant user API key (`tp_{slug}_…`) in Keystore** (Fix 1); batcher drains → **`POST /tag-reads/batch`**. | HTTP `201` + **`{ingested:1, rejected:0}`**; outbox row `pending → sent` (at-least-once, Fix 4) (A1, A5). |
+| **M5 — Map confirmation (E2E)** | Wire the "Scan vehicle" UI action end-to-end; seed a vehicle asset + a **`binding_kind='device'`** binding (Fix 3); run the full slice against a dev tenant. | E2E fixture (A7): after a relayed read, **`GET /assets/current-locations`** returns the vehicle at the read's location; plus manual — pin on the Map, PID snapshot in the Tag Reads row (A6). |
 
 **iOS port** is a *post-MVE* follow-up (own plan) once a confirmed-BLE adapter is in hand;
 the `PidCodec` + core contracts are the reusable, portable parts.
@@ -313,17 +361,22 @@ the `PidCodec` + core contracts are the reusable, portable parts.
   footprint budget; numbers `unverified` until M0 builds exist.
 
 **Open questions (surfaced for human/backend review)**
-- **OQ-1 (blocking M4) — device ingest credential.** `provision`/`approve` return no token
-  and `tag-reads` auth is tenant-scoped. **How does an approved handset authenticate its
-  `POST /tag-reads`?** (§5 🚩) — needs a backend answer before M4.
-- **OQ-2 — vehicle-asset ↔ read linkage.** Does referencing the vehicle via `tag_id`
-  (its registered tag) correctly surface the read against the vehicle asset, or is a
-  different association required? (`unverified`.) The Map pin (via `location`) works
-  regardless; the *asset link* is the open part.
+- **OQ-1 — device ingest credential — RESOLVED (Fix 1).** Confirmed a real gap: `tpd_`
+  device tokens are never verified by ingest auth (`user_auth.py:137-210`). **Decision:**
+  Phase-0 uses an out-of-band **tenant user API key** (§5); the clean device-token fix is
+  post-MVE (ledger **`I-K6D1`**). *No longer blocking.*
+- **OQ-2 — vehicle-asset ↔ read linkage — RESOLVED (Fix 3).** The read surfaces the asset
+  **only** via a `binding_kind='device'` binding matching `tr.tag_id`
+  (`migrations/versions/057_epc_binding_match_hex.py`). **Decision:** that binding is a
+  required setup prerequisite (§2, §5); asserted by the A7 E2E fixture.
 - **OQ-3 — dongle registry.** MVE binds dongle↔vehicle **locally** (operator-confirmed). Is
   a backend-side dongle/vehicle registry wanted before this leaves experiment status?
+  *(Still open — a scope call, not a blocker.)*
 - **OQ-4 — iOS adapter confirmation.** Which specific BLE dongle is confirmed to work with
   iOS Core Bluetooth for the eventual port? (Deferred, but drives the M-series hardware buy.)
+- **OQ-5 — ingest idempotency.** At-least-once is accepted for the MVE (Fix 4). A backend
+  idempotency key would let a later revision reach exactly-once — tracked under
+  [Backend dependencies](#backend-dependencies-post-mve).
 
 ---
 
@@ -331,8 +384,11 @@ the `PidCodec` + core contracts are the reusable, portable parts.
 
 <!-- SDLC gate — fill before merge -->
 
-- **Plan-stage rubber-duck:** _pending_ — to run on this plan doc before it gates
-  implementation.
+- **Plan-stage rubber-duck:** **round 1 ran → 4 blocking findings** (ingest-auth gap; batch
+  endpoint/response mismatch; Map visibility requires a `binding_kind='device'` binding;
+  at-least-once vs exactly-once). **This is the round-2 revision** addressing all four —
+  each fix code-verified against `~/ws/TagPulse` and cited inline (file:line). Awaiting
+  re-review acceptance before the plan gates implementation.
 - **Diff-stage rubber-duck:** n/a — this change is **docs-only** (a plan/proposal). Per
   AGENTS §6 the docs carve-out applies (no deps/CI/IaC/security/behavioral config touched),
   **but** this plan will **gate** the Phase-0 implementation, which is *not* carved out —
