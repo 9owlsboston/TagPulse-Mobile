@@ -18,9 +18,10 @@ inspect) and Tracker (background moving beacon) — that is **offline-first** an
 
 **Where it stands today:** design drafted + the four foundational decisions locked (separate
 repo · hybrid · native Swift+Kotlin · HTTP-first), the **OBDII-on-demand MVE plan** agreed,
-and **Phase-0 M0 (scaffold) merged** — the Android Gradle project now exists (`:app`,
-`:gateway-core`, `:obdii`) with the `GatewayDriver` seam, `Observation` model, and an
-OpenAPI-generated backend client (no behavior yet). **M1 (BLE connect + one PID)** is next.
+and Phase-0 progressing — **M0 (scaffold) + M1 (BLE connect + RPM read) merged**. The
+`:obdii` module now connects an ELM327-over-BLE dongle and reads engine RPM (`010C`) behind
+a testable `BleTransport`/`Elm327Session` seam (unit-tested via a scriptable fake; real BLE
+is a manual HIL check). **M2 (full 4-PID snapshot + `normalize()`)** is next.
 
 ## Diagram
 
@@ -34,11 +35,13 @@ One line per area, each linking to the doc that owns the detail.
 
 - **Design** — drafted; decisions D1–D4 locked, endpoints mapped, phased plan set. See
   [`docs/design/mobile-client.md`](design/mobile-client.md).
-- **App code** — **Phase-0 M0 (scaffold) merged**: Android Gradle project (`:app`,
-  `:gateway-core`, `:obdii`), the `GatewayDriver` `discover→read→normalize` seam +
-  `Observation` model, and a backend client **generated** from the vendored `openapi.json`
-  (backend SHA `06dde2b`). No behavior yet — `ObdiiDriver` is stubs. Next: **M1** (BLE
-  connect + read RPM) per [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md#8-milestones--phased-steps).
+- **App code** — **Phase-0 M0 (scaffold) + M1 (BLE + RPM) merged**: Android Gradle project
+  (`:app`, `:gateway-core`, `:obdii`), the `GatewayDriver` `discover→read→normalize` seam +
+  `Observation` model, a backend client **generated** from the vendored `openapi.json`
+  (backend SHA `06dde2b`), and an `obdii` driver that connects an ELM327-over-BLE dongle and
+  reads engine RPM (`010C`) via a testable `BleTransport`/`Elm327Session` seam (`normalize()`
+  still `TODO`). Next: **M2** (full 4-PID snapshot + `normalize()`) per
+  [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md#8-milestones--phased-steps).
 - **Backend contract** — consumed as-is from TagPulse `openapi.json`; zero backend change
   needed for Phase 0.
 

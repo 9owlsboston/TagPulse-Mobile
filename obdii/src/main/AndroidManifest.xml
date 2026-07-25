@@ -1,3 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- obdii driver library manifest (M0 scaffold — no components). -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<!--
+  obdii driver library manifest.
+
+  BLE permissions live with the driver that needs them (plan
+  docs/design/obdii-mve-plan.md §6). The manifest merger folds these into the app.
+
+  Runtime-permission request UI is minimal/stubbed at M1 (declared here, granted by
+  the caller before AndroidBleTransport.connect()); full UI is a later milestone.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- API 31+ (Android 12+): the modern, location-free BLE permissions. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Legacy (< API 31): old BLE perms + fine location (required to scan pre-12),
+         capped so they are not requested on 12+. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.ACCESS_COARSE_LOCATION"
+        android:maxSdkVersion="30" />
+
+    <!-- The dongle link is BLE; the app is useless without it. -->
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="true" />
+
+</manifest>

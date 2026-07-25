@@ -197,3 +197,91 @@ count incl. inline enums); (4) marked the "R8 tree-shakes unused models" footpri
 **`unverified`/aspirational** (release `isMinifyEnabled=false`, so R8 does not strip yet),
 tracked as ledger **`C-ZVMF`**, in `CONTRACT.md`, `gateway-core/build.gradle.kts`, and this
 log. Verified: `docs-drift` clean.
+
+### 2026-07-24 — OBDII MVE M1: BLE connect + one PID (RPM) behind a testable seam
+
+Implemented milestone **M1** of `docs/design/obdii-mve-plan.md` (§8 M1 row) on branch
+`feat/m1-ble-rpm` off `main` (M0 already merged). Built the OBD-II read path behind a
+**testable `BleTransport` seam** (plan §3/§6):
+
+- **`BleTransport`** interface (`obdii/.../ble/`): coroutine/`Flow` link — `connect()`,
+  `write(bytes)`, `notifications: Flow<ByteArray>`, `connected: StateFlow<Boolean>`. Two
+  impls: **`AndroidBleTransport`** (real `android.bluetooth`: `BluetoothLeScanner` filter →
+  `connectGatt` → request MTU (best-effort, reassemble regardless) → `discoverServices` →
+  resolve notify/write chars → write CCCD to enable notify; **HIL-only**, compiles + lints
+  clean, not unit-tested) and **`FakeBleTransport`** (test source set: scriptable
+  command→fragments map, records `writes`, can model a mid-session drop).
+- **`Elm327Session`**: init handshake `ATZ→ATE0→ATL0→ATS0→ATSP0`, then `010C` (RPM) only;
+  reassembles notification fragments to the `>` prompt (subscribe-before-write via
+  `async(UNDISPATCHED)`); per-command `withTimeout` (default 4 s) + bounded retry; one
+  reconnect on GATT drop; `NO DATA`/`?`/`UNABLE TO CONNECT`/timeout → clean
+  `RpmReading.Failure`, never a crash. Observable `StateFlow<ConnectionState>`
+  (Disconnected/Connecting/Handshaking/Ready/Reading/Error); logs the RPM on success.
+- **`PidCodec.decodeRpm`** — pure/synchronous `010C → ((A*256)+B)/4` (seed of the future
+  codec). Handles spaces-on/off framing, echo, whitespace, lowercase; error tokens →
+  typed failures. Speed/coolant/fuel decode + `sensor_data` assembly deliberately deferred
+  to M2.
+- **`ObdiiDriver`**: `discover()` returns the one configured dongle (scan runs inside
+  `AndroidBleTransport.connect()`); `read()` = connect → handshake → read RPM →
+  `DriverReading(rpm)`; `normalize()` stays `TODO` (M2). Factories `create(transport)` /
+  `forAndroid(context)`. No-arg ctor retained for the scaffold smoke test.
+- **UUIDs not hard-coded**: `BleUuidConfig` (nullable fields → runtime discovery;
+  `NORDIC_UART_LIKE` default marked `unverified`, dongle-specific; `DISCOVER_ALL`).
+- **Permissions** (obdii manifest): `BLUETOOTH_SCAN`+`usesPermissionFlags="neverForLocation"`,
+  `BLUETOOTH_CONNECT` (API 31+); legacy `BLUETOOTH`/`BLUETOOTH_ADMIN`/`ACCESS_FINE_LOCATION`
+  (+`ACCESS_COARSE_LOCATION`, required by lint `CoarseFineLocation`) all `maxSdkVersion=30`;
+  `uses-feature bluetooth_le required`. Runtime request flow is minimal/stubbed at M1.
+
+Deps: added `kotlinx-coroutines-core` (impl) + `kotlinx-coroutines-test` (test) to `:obdii`
+(catalog entry added). Tests use `runTest` virtual time — **no hardware**.
+
+Verified — gate GREEN: `./gradlew clean lintDebug testDebugUnitTest assembleDebug` →
+`BUILD SUCCESSFUL`. Unit tests all `failures=0 errors=0`: **obdii 17** (PidCodec 9 incl.
+`41 0C 0D 48`→850, fragmented/whitespace/lowercase, spaces-off, `NO DATA`/`?`/`UNABLE`/
+malformed; Elm327Session 6 incl. exact command order, fragment reassembly, RPM decode,
+state transitions Disconnected→…→Ready→Reading, timeout + `NO DATA` clean-error; Obdii
+driver 2), gateway-core 2, app 1 (**20 total**). Lint clean (one benign `UnusedAttribute`
+warning on `neverForLocation`, expected — attribute only applies API 31+). `app-debug.apk`
+produced. `docs-drift` clean.
+
+**HIL note:** `AndroidBleTransport` needs a real ELM327-over-BLE dongle + granted runtime
+permissions — the actual RPM-from-hardware check (plan M1 verification signal) is a manual
+HIL step, not covered by CI. UUIDs/framing/MTU-grant remain `unverified` (plan §6) until
+validated on the purchased adapter.
+
+Diff-stage rubber-duck: pending (post-implement gate + verifier next).
+
+### 2026-07-24 — OBDII MVE M1 round-2: hardware-path fixes (post-code-review)
+
+`verifier` said "M1 conforms" (gate green) but code-review found 2 real hardware-path bugs
+the unit gate missed (because `FakeBleTransport` only threw `BleDisconnectedException`).
+Fixed on the same branch `feat/m1-ble-rpm` (PR #5), scope held to M1 (one PID, read+log):
+
+- **Fix 1 (HIGH)** — generic `BleException` was uncaught. `AndroidBleTransport.write()` can
+  throw a plain `BleException` ("characteristic write rejected" / "write characteristic not
+  resolved"), not only `BleDisconnectedException`. Added `catch (BleException)` to both the
+  `Elm327Session.connect()` handshake loop (→ `fail(LINK_ERROR)` + throw `Elm327Exception`;
+  state no longer stuck at Handshaking) and `requestRpm()` (→ `RpmReading.Failure(LINK_ERROR)`,
+  not retried; `readRpm()` never throws for a per-command failure — contract restored). New
+  `ObdError.LINK_ERROR`.
+- **Fix 2 (MED)** — `BluetoothGatt` leak on drop+reconnect. The `STATE_DISCONNECTED` branch
+  now `gatt.close()`s and nulls the field (guarded to the callback's own gatt), and
+  `connect()` closes any pre-existing gatt before assigning (guards re-entrant/reconnect).
+  `disconnect()` stays idempotent.
+- **Fix 3 (LOW)** — write type now derived from the resolved characteristic's properties
+  (`PROPERTY_WRITE`→`WRITE_TYPE_DEFAULT`, else `WRITE_TYPE_NO_RESPONSE`); many ELM327/Nordic
+  clones are write-no-response only. Marked `unverified` (HIL).
+- **Fix 4** — `Elm327Session.reconnect()` now rethrows `CancellationException` before its
+  broad catch (no swallowed structured-concurrency cancellation); the `connect()`
+  transport-connect catch also rethrows cancellation.
+- **Fix 5** — extended `FakeBleTransport` with a `throwOn: String?` hook (generic
+  `BleException`) and added tests using the existing `dropAfter`/`connectCount`: +3
+  `Elm327Session` tests — generic `BleException` on read → clean `LINK_ERROR` (no throw) +
+  Error state; generic `BleException` in handshake → Error + `Elm327Exception`;
+  drop→reconnect (`connectCount==2`)→re-handshake→recovered `Value(850)`.
+
+Verified — gate GREEN: `./gradlew clean lintDebug testDebugUnitTest assembleDebug` →
+`BUILD SUCCESSFUL`; unit tests all `failures=0 errors=0` (obdii **20** — PidCodec 9,
+Elm327Session **9**, ObdiiDriver 2; gateway-core 2; app 1 = **23 total**); lint clean;
+`app-debug.apk` built. `docs-drift` clean. Diff-stage rubber-duck attestation recorded
+(ran → "M1 conforms"; 2 bugs fixed) in the plan `## Review attestations` + mirrored to PR #5.

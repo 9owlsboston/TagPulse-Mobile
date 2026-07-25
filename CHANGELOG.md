@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **M1 (BLE connect + one PID)** of the OBD-II MVE: a testable `BleTransport` seam
+  (interface + real `AndroidBleTransport` over `android.bluetooth` [HIL-only] +
+  scriptable in-memory `FakeBleTransport` for tests); an `Elm327Session` that runs
+  the ELM327 init handshake (`ATZ→ATE0→ATL0→ATS0→ATSP0`), requests **RPM (`010C`)
+  only**, reassembles notification fragments to the `>` prompt, and exposes an
+  observable `StateFlow<ConnectionState>`; a pure `PidCodec.decodeRpm` (`010C` →
+  `((A*256)+B)/4`, the seed of the future codec); `NO DATA`/`?`/`UNABLE TO
+  CONNECT`/timeout treated as clean failures with bounded retry + one reconnect;
+  `ObdiiDriver.discover()/read()` wired to exercise the RPM path (`normalize()`
+  stays M2). BLE permissions declared (`BLUETOOTH_SCAN`+`neverForLocation`,
+  `BLUETOOTH_CONNECT`; legacy perms `maxSdkVersion`-guarded). GATT UUIDs are
+  configurable/discovered, never hard-coded. Gate green
+  (`./gradlew lintDebug testDebugUnitTest assembleDebug`).
 - **M0 (Scaffold)** of the OBD-II MVE: Android Gradle project (Kotlin DSL, wrapper
   pinned to Gradle 8.11.1, version catalog) with `:app`, `:gateway-core`, `:obdii`
   modules; the `GatewayDriver` seam (`discover → read → normalize`) + normalized
