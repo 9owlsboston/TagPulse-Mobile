@@ -15,6 +15,8 @@ composeBom = "2024.09.03"
 junit = "4.13.2"
 robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
+androidxTestExtJunit = "1.2.1"
+androidxTestRunner = "1.6.2"
 
 # Android SDK levels (referenced from module build scripts).
 compileSdk = "35"
@@ -38,6 +40,8 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 
 # Jetpack Compose (M5 "Scan vehicle" UI). The BOM aligns all Compose artifact
 # versions; individual libs below omit a version and inherit it from the BOM.

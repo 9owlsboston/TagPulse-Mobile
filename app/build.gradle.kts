@@ -20,13 +20,31 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Instrumented tests target the MINIFIED `release` variant so JacksonR8SmokeTest
+    // validates the R8 keep-rules against the actually-shrunk app (ledger C-ZVMF).
+    // Running it needs an emulator/device + a release signing config (CI/HIL gate);
+    // it compiles here via `:app:assembleReleaseAndroidTest`.
+    testBuildType = "release"
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Footprint (ledger C-ZVMF): R8 makes the generated-model tree-shaking
+            // load-bearing — the ~145-schema OpenAPI superset is shrunk to the used
+            // ingest models. Keep-rules for the reflective Jackson stack ship as
+            // :gateway-core consumer rules (see gateway-core/consumer-rules.pro).
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // R8 rules for the minified instrumented-test APK (testBuildType=release).
+            testProguardFiles("test-proguard-rules.pro")
+            // Phase-0 placeholder: sign the minified release with the DEBUG keystore
+            // so `connectedReleaseAndroidTest` (JacksonR8SmokeTest — the R8 runtime
+            // gate) is installable on an emulator/CI. Replace with a real release
+            // signing config before any store release.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -84,4 +102,9 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // Instrumented (androidTest) smoke test — validates the R8 keep-rules (C-ZVMF)
+    // against the minified release variant on an emulator/CI.
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }

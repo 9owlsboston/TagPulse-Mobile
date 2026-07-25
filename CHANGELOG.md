@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`C-ZVMF` — R8 footprint tree-shaking is now load-bearing.** The `:app` release
+  build previously had `isMinifyEnabled = false`, so R8 never ran and the full
+  ~145-schema generated OpenAPI **model superset** shipped even though the MVE uses
+  only `TagReadCreate`/`Identity`/`Location`. Release now enables `isMinifyEnabled`
+  + `isShrinkResources`, with the reflective-Jackson **keep-rules shipped as
+  `:gateway-core` consumer rules** (`consumer-rules.pro`): `-keepattributes` for
+  annotations/signatures, `-keepclassmembers` (deliberately not `-keep`, so unused
+  model *classes* are still stripped) for the generated `api.model.**` + `GeoLocation`,
+  a `kotlin.Metadata` keep for jackson-module-kotlin, a `TypeReference`-subclass keep,
+  and `-dontwarn`s for JDK/Bean + Tink/errorprone classes absent on Android.
+  **Build-verified:** `:app:assembleRelease` R8 `usage.txt` shows **145/148 generated
+  model files removed** and the used models + `GeoLocation` (with all members) retained;
+  release APK ~2.3 MB. Runtime Jackson-post-R8 correctness is covered by a JVM
+  `JacksonR8ContractTest` (unminified contract) and a ready-to-run instrumented
+  `JacksonR8SmokeTest` (`app` sets `testBuildType = "release"` so it targets the
+  minified variant; `connectedReleaseAndroidTest` on an emulator/CI is the remaining
+  gate — this repo has no emulator). Debug builds don't run R8 and are unaffected.
+
 ### Added
 - **M5 (Map confirmation / end-to-end)** of the OBD-II MVE — the final Phase-0
   milestone — wiring the "Scan vehicle" UI + GPS on top of the M0–M4 pipeline and

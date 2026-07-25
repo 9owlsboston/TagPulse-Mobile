@@ -38,11 +38,11 @@ openApiGenerate {
     // set (all 145 component schemas -> 148 files incl. inline enums). This is
     // still generated-not-hand-written (AGENTS §2) and is a superset of the MVE
     // ingest models (TagReadCreate {Identity, Location} for POST /tag-reads/batch).
-    // Footprint mitigation is UNVERIFIED/aspirational: R8 would tree-shake the
-    // unused models, but release isMinifyEnabled=false today so it does NOT strip
-    // them yet — making that load-bearing (enable R8 + keep-rules, or trim the
-    // spec) is tracked as ledger C-ZVMF before any release footprint acceptance.
-    // See contract/CONTRACT.md.
+    // Footprint mitigation is now LOAD-BEARING (ledger C-ZVMF): :app release enables
+    // R8 (isMinifyEnabled=true) with reflective-Jackson keep-rules in
+    // gateway-core/consumer-rules.pro, so the unused models are tree-shaken —
+    // build-verified (assembleRelease usage.txt: 145/148 generated model files
+    // removed; used models + GeoLocation retained). See contract/CONTRACT.md.
     globalProperties.set(
         mapOf(
             "models" to "",

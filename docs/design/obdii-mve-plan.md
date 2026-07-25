@@ -529,3 +529,26 @@ the `PidCodec` + core contracts are the reusable, portable parts.
   over-evict` test) in merged PR #8; ledger chore was stale. Scope held to `gateway-core` relay
   (no app/obdii/UI). **current-state:** not-affected (thin doc; internal retry-mapping refinement
   doesn't move the high-level snapshot).
+- **Follow-up chore `C-ZVMF` (R8 footprint tree-shaking, `fix/footprint-r8-treeshake`):**
+  **plan-stage rubber-duck ran → 5 blocking findings** (generated models use `@get:JsonProperty`
+  getters not just fields; `GeoLocation` also reflectively serialized by `OutboxJson`; anonymous
+  `TypeReference` subclasses need protection in R8 full-mode; `-dontwarn` must target the real
+  missing `java.beans.*`; build/`usage.txt` can't prove runtime correctness — need a real
+  serialize/deserialize run). **All addressed:** keep-rules use `-keepclassmembers` (ctors +
+  fields + **methods**, so annotated getters survive while unused model *classes* are still
+  stripped) for `api.model.**` **and** `GeoLocation`; `TypeReference` + subclasses kept;
+  `-keepattributes` for annotations/Signature; `-dontwarn` reconciled from R8's `missing_rules.txt`
+  (java.beans/jackson.ext/w3c.dom + Tink errorprone). **Environment fact:** no emulator/KVM/SDK
+  tools here, so R8 *runtime* validation can't execute — surfaced to the user, who chose to enable
+  R8 now with build-time evidence + a ready instrumented gate. **Diff-stage code-review ran → no
+  blocking correctness issues** (keep-rules technically sound; kotlin-reflect ships its own R8
+  rules); one **Medium** (the smoke test couldn't *run* — release had no signingConfig) **fixed**
+  by signing the minified release with the debug keystore (Phase-0 placeholder) so
+  `connectedReleaseAndroidTest` is installable. **Verified:** `:app:assembleRelease` green, R8
+  `usage.txt` = **145/148 generated model files removed**, `TagReadCreate`/`Identity`/`Location`/
+  `GeoLocation` + members retained (no member removals), APK ~2.3 MB;
+  `:app:assembleReleaseAndroidTest` green (instrumented test compiles against the R8 variant);
+  full debug gate green (**app 10 + gateway-core 51 + obdii 42 = 103**, `failures=0 errors=0`;
+  `+3` JVM contract tests). **Remaining gate (CI/HIL):** run `:app:connectedReleaseAndroidTest`
+  on an emulator to exercise Jackson-post-R8 at runtime. **current-state:** not-affected (footprint
+  budget is a design-doc concern; the high-level snapshot is unchanged).
