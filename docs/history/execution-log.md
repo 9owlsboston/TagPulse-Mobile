@@ -321,6 +321,106 @@ testDebugUnitTest assembleDebug` → `BUILD SUCCESSFUL`; unit tests all `failure
 app 1 = **45 total**); lint clean; `app-debug.apk` built. `docs-drift` clean. Diff-stage
 rubber-duck: pending (verifier next).
 
+### 2026-07-24 — OBDII MVE M4: enrolment + relay (drain outbox → POST /tag-reads/batch)
+
+Implemented milestone M4 of `docs/design/obdii-mve-plan.md` (§8 M4 row, §5 enrolment, §7
+drain/backoff/at-least-once/caps, §4 data mapping) on branch `feat/m4-relay`, all in
+`:gateway-core` (new `relay` package). The durable outbox now **drains**: `PENDING` rows are
+mapped to the **generated** `TagReadCreate` and relayed as a batched `POST /tag-reads/batch`
+authenticated with the tenant user API key. Scope held to M4 — no app UI / "Scan vehicle"
+button, no GPS capture (the mapping consumes `Observation.location` if present; capture is
+M5), no live E2E/Map (A6/A7), no device-approval automation, no `tpd_` device-token path
+(out of MVE per §5 🚩).
+
+- **`CredentialStore` (interface) + `KeystoreCredentialStore`.** The interface exposes
+  `baseUrl`, `deviceId` (gateway device UUID), and the ingest `apiKey` (`tp_…`), read fresh
+  per request. `KeystoreCredentialStore` is the **Android Keystore-backed** impl via
+  `androidx.security:security-crypto` `EncryptedSharedPreferences` (`AES256_SIV` keys /
+  `AES256_GCM` values under a hardware `MasterKey`) — secrets encrypted at rest, `store()`
+  /`clear()`, and a **redacting `toString()`** (`apiKey=***redacted***`). Fix 1 (DECIDED):
+  ingest auth is the out-of-band **tenant user API key** as `Authorization: Bearer tp_…`,
+  **not** the unwired `tpd_` device token (§5 🚩). **Keystore test boundary = HIL** (mirrors
+  M1's real-BLE seam): the real `AndroidKeyStore` provider isn't faithfully implemented by
+  Robolectric, so the impl is compile-only in the unit gate; the relay logic is fully driven
+  by a `FakeCredentialStore` (in-memory, test source set).
+- **`BackendClient` (interface) + `OkHttpBackendClient`.** Thin OkHttp transport over the
+  **generated** models: `postTagReadsBatch(reads): BatchResult` → POST `{baseUrl}/tag-reads/
+  batch`, `Authorization: Bearer <apiKey>`, jackson-serialized body, parses `201
+  {ingested,rejected}`; `provisionDevice(key,name)` → POST `/devices/provision` with
+  `X-Provisioning-Key` (approval stays manual/admin — **not** automated). Non-2xx → typed
+  outcomes: `5xx`/`IOException` → `Retryable`; `401` → `CredentialError` (fixed message, the
+  server body is never echoed → the key can't leak); other `4xx` → `Terminal(code)`.
+  **Generated-models-vs-full-client decision:** kept the AGENTS §2 hard rule (models stay
+  generated — `TagReadCreate`/`Location` are used verbatim) but hand-wrote a *thin transport*
+  rather than generating the full OpenAPI kotlin api-client, because the OpenAPI **3.1** spec
+  breaks the generator's selective model filter and the full api-client would pull
+  okhttp+moshi/gson wiring + auth scaffolding far beyond the two endpoints the MVE needs
+  (footprint budget). Documented in `CONTRACT.md` ("Transport decision") + here.
+- **`Observation → TagReadCreate` mapping (`ObservationMapper`, pure, §4).** `device_id` =
+  `CredentialStore.deviceId` (the gateway); `tag_id` = `Subject.id`; `timestamp` =
+  `ISO_INSTANT` UTC; `sensor_data` = `Observation.payload` (null-valued top-level keys
+  dropped); `location` = `GeoLocation` → generated `Location(latitude, longitude,
+  accuracyM, source=GPS)` — note the field is **`accuracy_m`** and `source` a fixed enum
+  (§4 correction). `identity`/`tag_data`/`reader_antenna`/`signal_strength` left null.
+- **`Drainer` (+ `DrainConfig`/`DrainReport`).** `drain()`: **`purgeExpired()` first** (drop
+  >maxAge/24 h rows before send), then take up to `batchSize` (≤ **500**, server cap) of
+  `PENDING` oldest-first → map → `postTagReadsBatch`. On `201` → `PENDING→SENT` (via the M3
+  `updateStateAndAttempts`, now exposed as `Outbox.transition`). On retryable → bump
+  `attempts`, **full-jitter exponential backoff** (`delay ∈ [0, min(maxBackoff, baseBackoff·
+  2^failures)]`, jitter+sleep injectable), stay `PENDING`; at `maxAttempts` → `FAILED`
+  (surfaced in the report, not dropped). On terminal `400` → `FAILED`. On `401` → abort the
+  drain leaving rows `PENDING` (no per-row terminal-fail spam). **At-least-once (Fix 4,
+  DECIDED):** no client idempotency key — a lost `201` leaves rows `PENDING` and the next
+  drain re-sends → a backend duplicate (documented, accepted).
+- **Ledger `C-1TQZ` — RESOLVED.** M4 adds a second writer (the drainer), so
+  `Outbox.enforceSizeCap()` is now **atomic**: the DAO's `deleteOldest(n)` (count-then-delete,
+  raceable) was replaced by a single-statement `evictToCap(maxItems)`
+  (`DELETE … WHERE id NOT IN (SELECT id … ORDER BY created_at DESC, id DESC LIMIT :maxItems)`)
+  that folds count + eviction together — no read-then-delete overshoot. A new caps test proves
+  filling exactly to the cap evicts nothing and one-past evicts exactly one.
+- **Tests (gate — no network, no device; +28 in `:gateway-core`).**
+  `OkHttpBackendClientTest` (**8**) drives the real OkHttp client against a loopback OkHttp
+  **`MockWebServer`** (added `testImplementation`): asserts path/method/`Authorization: Bearer
+  tp_…`/`application/json`, the jackson body shape (generated field names incl. `sensor_data`,
+  `location.accuracy_m`/`source=gps`), `201 {ingested,rejected}` parsing, and 500→Retryable /
+  400→Terminal / 401→CredentialError + missing-key short-circuit + provision path.
+  `ObservationMapperTest` (**8**, pure JVM) covers the §4 mapping field-by-field.
+  `DrainerTest` (**9**, real Robolectric Room `Outbox` + scripted `FakeBackendClient`):
+  `PENDING→SENT` on 201; attempts++ + backoff (`[1000,2000]` ms) + eventual `FAILED` on
+  repeated 5xx; **at-least-once** (lost-201 → re-send same rows, no data loss, would
+  duplicate); `purgeExpired` runs before send (stale never relayed); batch cap (5 rows →
+  2,2,1); 400→FAILED; 401→leaves PENDING; not-enrolled skip. `SecretHygieneTest` (**2**): the
+  401 reason never echoes the key, and no `"tp_`/`"tpd_` literal is committed in main sources.
+  Plus the C-1TQZ atomic-cap test in `OutboxCapsTest`.
+
+Verified — gate GREEN: `ANDROID_HOME=/home/velen/android-sdk ./gradlew lintDebug
+testDebugUnitTest assembleDebug` → `BUILD SUCCESSFUL`; unit tests all `failures=0 errors=0`
+(gateway-core **41** = 13 prior + **28 new** [BackendClient 8, Mapper 8, Drainer 9,
+SecretHygiene 2, +1 caps atomicity]; obdii 42; app 1 = **84 total**); the new relay tests
+confirmed present in `gateway-core/build/test-results/testDebugUnitTest/` (ran under
+`testDebugUnitTest`, incl. MockWebServer + Robolectric); lint clean; `app-debug.apk` built.
+`docs-drift` clean. `CHANGELOG` + `CONTRACT.md` (OkHttp/security-crypto deps + transport
+decision) + this log updated. New runtime deps in `:gateway-core`: `okhttp` (4.12.0),
+`androidx.security:security-crypto` (1.1.0-alpha06); `okhttp-mockwebserver` test-only.
+Diff-stage rubber-duck: **pending** (post-implement gate green; verifier next).
+
+**Round-2 (post-verify, same branch `feat/m4-relay` / PR #8).** Both gates passed
+(`verifier` "M4 conforms" 6/6; code-review "no blocking issues"); two small fixes applied.
+(1) **Surface `rejected`** — `DrainReport` gained a `rejected` field and `drain()` now sums
+the backend's `201 {rejected}` across accepted batches (plan §7 "keep rejected for
+inspection"): purely an observability surface — rows still commit `SENT` (no per-row ids to
+selectively fail; `purgeExpired` pre-drops clock-terminal rows), behavior unchanged
+(**+1 `DrainerTest`**). (2) **Provision device-type** default `"rfid_reader"` →
+**`"mobile_gateway"`** (a phone gateway isn't an RFID reader; backend-verified free-form
+`str ≤50`, `~/ws/TagPulse` `schemas.py:142`) — kept caller-configurable; the provision test
+now pins the new default in the request body. Recorded the M4 diff-stage attestation in
+`docs/design/obdii-mve-plan.md` `## Review attestations` (mirrored into the PR #8 body,
+replacing "pending"); logged two **non-blocking** follow-ups to the ledger (`429`/`408`→
+`Terminal` could be retryable; `401` parks rows `PENDING` indefinitely → M5 should surface to
+the operator). Gate GREEN again (`lintDebug testDebugUnitTest assembleDebug` → `BUILD
+SUCCESSFUL`; gateway-core **42** [DrainerTest 10], obdii 42, app 1 = **85 total**,
+`failures=0 errors=0`); `docs-drift` clean.
+
 ### 2026-07-24 — OBDII MVE M3: normalize → durable Room outbox (restart-safe)
 
 Implemented milestone M3 of `docs/design/obdii-mve-plan.md` (§8 M3 row, §7 offline-first

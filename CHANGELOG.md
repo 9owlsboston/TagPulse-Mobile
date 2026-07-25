@@ -8,7 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **M3 (Normalize → durable outbox)** of the OBD-II MVE, in `:gateway-core` (the
+- **M4 (Enrolment + relay)** of the OBD-II MVE, in `:gateway-core` (new `relay`
+  package): the durable outbox now **drains** — `PENDING` `Observation`s are mapped
+  to the **generated** `TagReadCreate` and relayed as a batched
+  **`POST /tag-reads/batch`**, moving rows `PENDING → SENT` on a `201`. A
+  `CredentialStore` interface (`baseUrl` / `deviceId` / ingest `apiKey`) with a
+  **Keystore-backed** impl (`androidx.security` `EncryptedSharedPreferences`, secrets
+  encrypted at rest, redacting `toString()`) holds the enrolment facts; ingest
+  authenticates with the out-of-band **tenant user API key** (`Authorization: Bearer
+  tp_…`, Fix 1) — never the unwired `tpd_` device token. A thin OkHttp
+  `BackendClient` (`OkHttpBackendClient`) wraps the generated models (`postTagReadsBatch`
+  parses `{ingested, rejected}`; `provisionDevice` posts `X-Provisioning-Key`; approval
+  stays manual/admin) and maps non-2xx to typed outcomes — `5xx`/network → retryable,
+  `400` → terminal, `401` → a credential error (the key is never logged or echoed). A
+  pure `ObservationMapper` performs the §4 field mapping (`device_id`=gateway UUID,
+  `tag_id`=subject id, ISO-8601 `timestamp`, `sensor_data`=payload, `location` with
+  `accuracy_m`/`source=gps`). A `Drainer` purges stale rows **before** sending, batches
+  at ≤ **500**, and on retryable failure bumps `attempts` with **full-jitter exponential
+  backoff**, parking a batch `FAILED` at `maxAttempts` (surfaced, not dropped); on a `401`
+  it leaves rows `PENDING`. The `DrainReport` surfaces the backend's clock-`rejected` count
+  (plan §7 "keep rejected for inspection"). **Delivery is at-least-once (Fix 4):** no client
+  idempotency key, so a lost `201` re-sends and duplicates on the backend — documented and
+  accepted.
+  New runtime deps in `:gateway-core`: `okhttp` and `androidx.security:security-crypto`
+  (`okhttp-mockwebserver` test-only). Tests (no network, no device): OkHttp `MockWebServer`
+  backend-client tests, pure mapping tests, Robolectric `Drainer` tests
+  (SENT/retry+backoff/FAILED/at-least-once/purge/batch-cap), and secret-hygiene asserts.
+  Gate green (`./gradlew lintDebug testDebugUnitTest assembleDebug`).
+
+### Fixed
+- **`C-1TQZ` — outbox size cap is now atomic.** With M4 adding a second writer (the
+  drainer), `Outbox.enforceSizeCap()` folds count + eviction into a single-statement
+  DAO `evictToCap(maxItems)` (`DELETE … WHERE id NOT IN (SELECT … LIMIT :maxItems)`),
+  closing the read-then-delete race the prior `count()`-then-`deleteOldest()` opened.
+
+
   first real core implementation beyond the M0 interfaces/generated client): a
   durable **Room** outbox that persists every `Observation` and survives a process
   restart, but does **not** yet send. `OutboxItem` entity mirrors plan §7

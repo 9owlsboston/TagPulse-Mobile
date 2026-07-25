@@ -79,3 +79,42 @@ consumes the same Jackson runtime for the outbox codec (`OutboxJson`).
 
 The HTTP client / API surface (endpoint bindings, auth) is deferred to later
 milestones (plan §8, M4).
+
+## M4 transport decision — thin OkHttp wrapper over the generated *models*
+
+M4 (`:gateway-core` `relay` package) needs a real northbound HTTP client for
+`POST /tag-reads/batch` and `POST /devices/provision`. Two options:
+
+1. **Generate the full OpenAPI kotlin *api-client*** (endpoint bindings + an
+   `ApiClient` + auth scaffolding), or
+2. **Hand-write a thin transport** (`OkHttpBackendClient`) that serializes the
+   **generated models** and calls the two endpoints directly.
+
+**Decision: option 2** — a thin OkHttp transport over the generated models.
+
+- The AGENTS §2 hard rule is about **models**, not transport: "the API client is
+  generated from `openapi.json`; **do not hand-write request/response models**."
+  M4 uses the generated `TagReadCreate` / `Location` **verbatim** (Jackson-annotated)
+  and never hand-writes a wire model — the rule is honored.
+- Generating the full api-client is a poor fit here: the selective generation this
+  spec needs is broken on **OpenAPI 3.1** (same reason the model gen emits the full
+  set — see above), and a full api-client pulls its own HTTP + serialization wiring
+  and multi-endpoint auth scaffolding far beyond the **two** endpoints the MVE calls
+  — against the footprint budget.
+- The thin transport is ~1 OkHttp `Request` per endpoint; it reads `baseUrl`/`apiKey`
+  from the `CredentialStore` per call and maps status codes to typed outcomes. Auth is
+  the tenant user API key as `Authorization: Bearer tp_…` (plan §5, Fix 1) — **not**
+  the `tpd_` device token, which the backend never verifies on ingest (§5 🚩).
+
+### M4 runtime dependencies added to `:gateway-core`
+
+- **`com.squareup.okhttp3:okhttp`** — the northbound HTTPS transport
+  (`OkHttpBackendClient`). `okhttp3:mockwebserver` is **test-only** (drives the client
+  against a loopback server — no network, no device).
+- **`androidx.security:security-crypto`** — `EncryptedSharedPreferences` for the
+  Keystore-backed `CredentialStore` (ingest API key + `device_id` encrypted at rest,
+  never in source/resources/logs; AGENTS §2). The real `AndroidKeyStore` path is a
+  **HIL** check (Robolectric doesn't implement it faithfully); the unit gate drives a
+  `FakeCredentialStore`.
+- Jackson (already present since M3) serializes the generated models — no new
+  serialization dep.

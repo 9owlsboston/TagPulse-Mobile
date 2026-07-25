@@ -448,6 +448,29 @@ the `PidCodec` + core contracts are the reusable, portable parts.
   and undriven M4 DAO methods (`updateStateAndAttempts`/`deleteById`, no callers). Scope held
   to M3 (no drainer/HTTP/retry-exec/credential/GPS/UI; only ever `PENDING`); no `app/`/`obdii/`
   changes. Gate green (**56 unit tests**, `failures=0 errors=0`).
+- **Diff-stage rubber-duck (M4 implementation, `feat/m4-relay` / PR #8):** **ran** on the M4
+  code diff. `verifier` verdict **"M4 conforms"** (6/6 checklist, gate re-run green; **41**
+  `gateway-core` tests incl. the OkHttp **MockWebServer** backend-client suite + the
+  Robolectric Room-backed `Drainer` suite, demonstrably executed under `testDebugUnitTest`);
+  code-review **"no blocking issues."** **Round-2 applied 2 small fixes** (both non-behavioral
+  to the happy path): (1) `DrainReport` now carries `rejected` and `drain()` sums the backend's
+  `201 {rejected}` across batches — closes the plan §7 "keep rejected for inspection"
+  observability gap (rows still commit `SENT`; there are no per-row ids to selectively fail and
+  `purgeExpired` pre-drops clock-terminal rows — behavior unchanged, count surfaced;
+  **+1 `DrainerTest`**). (2) `provisionDevice` default `device_type` corrected
+  `"rfid_reader"` → **`"mobile_gateway"`** (a phone isn't an RFID reader; backend-verified
+  free-form `str ≤50`, `schemas.py:142`) — kept as a caller-configurable parameter (provision
+  test now pins the new default). Accepted design decisions (no change): the **thin OkHttp
+  transport over the generated models** (AGENTS §2 models-stay-generated honored; rationale in
+  `CONTRACT.md` "M4 transport decision"), the bounded retry **recursion** with full-jitter
+  exponential backoff, and the **Keystore HIL boundary** (real `AndroidKeyStore` isn't faithful
+  under Robolectric; relay logic driven by `FakeCredentialStore`). At-least-once (Fix 4) — no
+  client idempotency key, a lost `201` re-sends+duplicates — verified documented + tested.
+  Ledger **`C-1TQZ` resolved** (atomic single-statement `evictToCap`). Two **non-blocking**
+  follow-ups deferred (logged to the ledger): `429`/`408` currently map to `Terminal` (could be
+  retryable), and a `401` parks rows `PENDING` indefinitely (M5 should surface it to the
+  operator). Scope held to M4 (no app UI/GPS/E2E-Map/approval-automation/`tpd_`). Gate green
+  (**42** `gateway-core` after round-2 = **85 total**; `failures=0 errors=0`).
 - **Diff-stage rubber-duck (this plan doc, docs-only):** n/a — this plan/proposal change is
   **docs-only**. Per AGENTS §6 the docs carve-out applies (no deps/CI/IaC/security/behavioral
   config touched), **but** this plan **gates** the Phase-0 implementation, which is *not*

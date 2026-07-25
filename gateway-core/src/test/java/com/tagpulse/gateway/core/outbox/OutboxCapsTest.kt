@@ -91,4 +91,34 @@ class OutboxCapsTest {
         assertEquals(0, outbox.purgeExpired(now))
         assertEquals(1, outbox.count())
     }
+
+    @Test
+    fun `atomic cap does not over-evict - exactly at the cap keeps every row`() = runBlocking {
+        // Ledger C-1TQZ: the size cap is a single-statement DELETE (count + evict
+        // folded together), so filling *exactly* to the cap evicts nothing and the
+        // next enqueue evicts exactly one — never a stale count-then-delete overshoot.
+        val maxItems = 4
+        var tick = 0L
+        val outbox = Outbox(
+            dao = db.outboxDao(),
+            config = OutboxConfig(maxItems = maxItems),
+            clock = { Instant.ofEpochMilli(1_000L + tick++) },
+        )
+
+        // Fill to exactly the cap: nothing is evicted.
+        (1..maxItems).forEach { outbox.enqueue(OutboxFixtures.observation(subjectId = "veh-$it")) }
+        assertEquals(maxItems, outbox.count())
+        assertEquals(
+            listOf("veh-1", "veh-2", "veh-3", "veh-4"),
+            outbox.pending().map { it.subjectId },
+        )
+
+        // One past the cap: exactly one (the oldest) is evicted — not more.
+        outbox.enqueue(OutboxFixtures.observation(subjectId = "veh-5"))
+        assertEquals(maxItems, outbox.count())
+        assertEquals(
+            listOf("veh-2", "veh-3", "veh-4", "veh-5"),
+            outbox.pending().map { it.subjectId },
+        )
+    }
 }
