@@ -19,11 +19,11 @@ inspect) and Tracker (background moving beacon) — that is **offline-first** an
 **Where it stands today:** design drafted + the four foundational decisions locked (separate
 repo · hybrid · native Swift+Kotlin · HTTP-first), the **OBDII-on-demand MVE plan** agreed,
 and Phase-0 progressing — **M0 (scaffold) + M1 (BLE + RPM) + M2 (4-PID snapshot + normalize)
-merged**. The `:obdii` module connects an ELM327-over-BLE dongle, reads a 4-PID snapshot
-(RPM/speed/coolant/fuel) behind a testable `BleTransport`/`Elm327Session` seam, decodes it
-via a pure `PidCodec`, and `normalize()`s it into the core's `Observation` (`sensor_data`
-payload). Unit-tested via a scriptable fake; real BLE is a manual HIL check. **M3 (Observation
-→ durable Room outbox)** is next.
++ M3 (durable Room outbox) merged**. The `:obdii` driver reads a 4-PID snapshot behind a
+testable seam and `normalize()`s it into an `Observation`; the `:gateway-core` **outbox**
+now persists each `Observation` to a file-backed Room queue (restart-safe, size/age-capped),
+write-through with no send yet. Unit-tested via a scriptable BLE fake + Robolectric; real BLE
+is a manual HIL check. **M4 (enrolment + drain the outbox → `POST /tag-reads/batch`)** is next.
 
 ## Diagram
 
@@ -37,13 +37,13 @@ One line per area, each linking to the doc that owns the detail.
 
 - **Design** — drafted; decisions D1–D4 locked, endpoints mapped, phased plan set. See
   [`docs/design/mobile-client.md`](design/mobile-client.md).
-- **App code** — **Phase-0 M0 (scaffold) + M1 (BLE + RPM) + M2 (4-PID snapshot + normalize)
-  merged**: Android Gradle project (`:app`, `:gateway-core`, `:obdii`), the `GatewayDriver`
-  `discover→read→normalize` seam + `Observation` model, a backend client **generated** from
-  the vendored `openapi.json` (backend SHA `06dde2b`), and an `obdii` driver that connects an
-  ELM327-over-BLE dongle, reads a 4-PID snapshot (RPM/speed/coolant/fuel) via a pure
-  `PidCodec`, and `normalize()`s it into an `Observation` (`sensor_data` payload; `location`
-  null until GPS is wired). Next: **M3** (Observation → durable Room outbox) per
+- **App code** — **Phase-0 M0 + M1 + M2 + M3 merged**: Android Gradle project (`:app`,
+  `:gateway-core`, `:obdii`), the `GatewayDriver` seam + `Observation` model, a backend client
+  **generated** from the vendored `openapi.json` (backend SHA `06dde2b`), an `obdii` driver
+  that reads a 4-PID snapshot (RPM/speed/coolant/fuel) via a pure `PidCodec` and `normalize()`s
+  it into an `Observation`, and a `:gateway-core` **durable Room outbox** that persists each
+  `Observation` (file-backed, restart-safe, size/age-capped; write-through, `PENDING` only —
+  no sender yet). Next: **M4** (enrolment + drain → `POST /tag-reads/batch`) per
   [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md#8-milestones--phased-steps).
 - **Backend contract** — consumed as-is from TagPulse `openapi.json`; zero backend change
   needed for Phase 0.
