@@ -27,8 +27,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gate — this repo has no emulator). Debug builds don't run R8 and are unaffected.
 
 ### Added
-- **M5 (Map confirmation / end-to-end)** of the OBD-II MVE — the final Phase-0
-  milestone — wiring the "Scan vehicle" UI + GPS on top of the M0–M4 pipeline and
+- **Handset↔tenant enrolment flow** (ledger `C-RYH7`, Increment 1) — the app can now be
+  enrolled against a live tenant instead of relying on the `AppContainer` `baseUrl`
+  placeholder. Implements plan §5 "Handset enrolment":
+  - **`EnrolmentCoordinator`** (`app`, mirrors `ScanCoordinator`) exposes an `EnrolState`
+    `StateFlow` (`Idle → Provisioning → Enrolled | Error`). One `enrol(input)`: validate
+    (non-blank fields + a well-formed **`https://`** `baseUrl`) → `POST /devices/provision`
+    against the **candidate** host via an ephemeral client → on success **atomically**
+    persist `{device_id, tp_ key, baseUrl}` in the Keystore. Nothing is written on failure
+    (no half-enrolled state); `Mutex`-serialized; secret-free error messages.
+  - **`EnrolScreen`** (Compose) — backend URL + provisioning key + masked `tp_` ingest key
+    + device name + **Provision** button; `MainActivity.AppRoot` **reactively** gates the
+    "Scan vehicle" screen behind enrolment.
+  - **Persisted, mutable `baseUrl`** — `KeystoreCredentialStore` now stores `baseUrl`
+    alongside `device_id`/`apiKey` (`store(deviceId, apiKey, baseUrl)`); the constructor arg
+    is a fallback default. New `InMemoryCredentialStore` carries a base URL only, for the
+    ephemeral provisioning client.
+  - **`ProvisioningScanner`** seam (interface + `ProvisioningPayload{baseUrl, provisioningKey}`)
+    for the enrolment QR; the ML Kit/CameraX camera impl is **Increment 1b** (manual entry
+    is the shipped path). Per **OQ2**, the QR carries only `baseUrl` + provisioning key; the
+    `tp_` key is pasted, keeping the broad tenant secret off the printed artifact.
+  - +11 `EnrolmentCoordinator` unit tests (fakes). **HIL** (not run here): real Keystore, a
+    live `provision→approve`, and end-to-end enrol→scan→Map. **Increment 2** (vehicle
+    VIN-bind — OBD-II Mode 09 + VIN barcode + plate label) is staged and backend-gated.
+
   proving the slice end-to-end. In `:app`:
   - **Jetpack Compose "Scan vehicle" screen** (`ui/ScanScreen.kt`) — a single-screen
     flow: a **Scan vehicle** button + a status/result area rendering the pipeline

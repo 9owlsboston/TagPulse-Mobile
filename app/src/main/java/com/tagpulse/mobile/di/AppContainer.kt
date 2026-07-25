@@ -8,10 +8,13 @@ import com.tagpulse.gateway.core.SubjectKind
 import com.tagpulse.gateway.core.outbox.Outbox
 import com.tagpulse.gateway.core.outbox.OutboxDatabaseFactory
 import com.tagpulse.gateway.core.relay.Drainer
+import com.tagpulse.gateway.core.relay.InMemoryCredentialStore
 import com.tagpulse.gateway.core.relay.KeystoreCredentialStore
 import com.tagpulse.gateway.core.relay.OkHttpBackendClient
+import com.tagpulse.gateway.core.relay.isEnrolled
 import com.tagpulse.gateway.obdii.ObdiiConfig
 import com.tagpulse.gateway.obdii.ObdiiDriver
+import com.tagpulse.mobile.enrol.EnrolmentCoordinator
 import com.tagpulse.mobile.location.AndroidLocationProvider
 import com.tagpulse.mobile.scan.Relay
 import com.tagpulse.mobile.scan.ScanCoordinator
@@ -38,9 +41,26 @@ class AppContainer(context: Context) {
 
     private val appContext = context.applicationContext
 
-    /** Enrolment credentials (Keystore-backed). Base URL is a setup input (plan §5). */
+    /** Enrolment credentials (Keystore-backed). Base URL falls back to a build-time
+     *  default until enrolment persists the real one (plan §5). */
     val credentials: KeystoreCredentialStore =
-        KeystoreCredentialStore(appContext, baseUrl = DEFAULT_BASE_URL)
+        KeystoreCredentialStore(appContext, fallbackBaseUrl = DEFAULT_BASE_URL)
+
+    /** True once the handset is enrolled (device_id + ingest key present). */
+    val isEnrolled: Boolean get() = credentials.isEnrolled
+
+    /**
+     * Drives the handset↔tenant enrolment (ledger `C-RYH7`). Provisioning runs against
+     * the operator-supplied *candidate* base URL via an ephemeral client (the persisted
+     * store is written only on success), then the enrolment tuple is stored atomically.
+     */
+    val enrolmentCoordinator: EnrolmentCoordinator = EnrolmentCoordinator(
+        provision = { baseUrl, provisioningKey, name ->
+            OkHttpBackendClient(InMemoryCredentialStore(baseUrl))
+                .provisionDevice(provisioningKey = provisioningKey, name = name)
+        },
+        persist = { deviceId, apiKey, baseUrl -> credentials.store(deviceId, apiKey, baseUrl) },
+    )
 
     /** Durable outbox over the file-backed Room DB (A4 restart-safe). */
     val outbox: Outbox = Outbox(OutboxDatabaseFactory.open(appContext).outboxDao())
@@ -78,8 +98,9 @@ class AppContainer(context: Context) {
 
     companion object {
         /**
-         * Backend origin. A **setup input** (not a secret) — provisioned out-of-band
-         * with the tenant key (plan §5). Placeholder until enrolment wires the real host.
+         * Fallback backend origin used until enrolment persists the real one. A
+         * **setup input** (not a secret). Enrolment (`EnrolmentCoordinator`) overwrites
+         * it in the Keystore; this is only the pre-enrolment default.
          */
         const val DEFAULT_BASE_URL: String = "https://api.tagpulse.example"
 
