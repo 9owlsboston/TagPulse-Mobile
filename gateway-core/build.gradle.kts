@@ -112,10 +112,25 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
+    // M4 relay: a THIN OkHttp transport over the GENERATED models (AGENTS §2 —
+    // the hard rule is about models, which stay generated; a thin transport that
+    // serializes the generated TagReadCreate is acceptable, see contract/CONTRACT.md
+    // "Transport decision"). OkHttp is the northbound HTTPS client (plan §3/§7).
+    implementation(libs.okhttp)
+    // M4 credential store: EncryptedSharedPreferences (Android Keystore-backed) so
+    // the ingest API key + device_id live in the platform secure store, never in
+    // source/resource files/logs (AGENTS §2). Compile-only for unit tests; the real
+    // AndroidKeyStore path is a HIL check (see KeystoreCredentialStore).
+    implementation(libs.androidx.security.crypto)
+
     testImplementation(libs.junit)
     // Room runs on the JVM under Robolectric — the faithful analogue of the A4
     // instrumented "enqueue → kill → relaunch → still pending" restart test.
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    // M4 BackendClient tests drive the real OkHttp client against a loopback
+    // MockWebServer (no network, no device) — asserts path/method/auth header/body
+    // shape + response parsing + status→outcome mapping.
+    testImplementation(libs.okhttp.mockwebserver)
 }

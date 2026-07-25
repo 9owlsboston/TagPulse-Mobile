@@ -77,10 +77,26 @@ class Outbox(
         return purged
     }
 
+    /**
+     * Drainer transition (M4): set [item]'s [OutboxState] + attempt count.
+     *
+     * The single write the M4 drainer uses to move a row off `PENDING` — to
+     * [OutboxState.SENT] on a `201`, to [OutboxState.FAILED] on a terminal reject
+     * or exhausted retries, or back to `PENDING` with a bumped [attempts] between
+     * retryable failures. Delegates to the DAO's `updateStateAndAttempts`. Returns
+     * rows affected (0 if the row was meanwhile evicted by a cap). The relay
+     * policy (backoff, max-attempts, at-least-once) lives in the drainer, not here.
+     */
+    suspend fun transition(id: Long, state: OutboxState, attempts: Int): Int =
+        dao.updateStateAndAttempts(id, state.name, attempts)
+
     private suspend fun enforceSizeCap() {
-        val overflow = dao.count() - config.maxItems
-        if (overflow > 0) {
-            val evicted = dao.deleteOldest(overflow)
+        // Atomic single-statement cap (ledger C-1TQZ): fold count + eviction into
+        // one DELETE so a concurrent writer (the M4 drainer) can't slip a row in
+        // between a separate count() and delete → over-eviction. Keeps the newest
+        // maxItems rows; deletes the rest.
+        val evicted = dao.evictToCap(config.maxItems)
+        if (evicted > 0) {
             // Bounded data-loss protection: unsent rows may be dropped so the local
             // queue can't grow without bound (footprint budget, plan §7).
             Log.w(

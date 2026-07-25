@@ -70,12 +70,17 @@ interface OutboxDao {
     suspend fun deleteCapturedBefore(cutoff: Long): Int
 
     /**
-     * Size cap: evict the [n] oldest rows (by insertion order). Returns rows
-     * deleted. Evicting *unsent* rows is bounded data-loss protection (see [Outbox]).
+     * Size cap (atomic): keep only the [maxItems] newest rows (by insertion
+     * order), deleting the rest in a **single statement**. Folding the count +
+     * eviction into one `DELETE ... WHERE id NOT IN (SELECT ... LIMIT :maxItems)`
+     * closes the read-then-delete race a second writer (the M4 drainer) would open
+     * (ledger **C-1TQZ**): a separate `count()` then `deleteOldest(count-cap)` could
+     * over-evict if a row landed between the two. Returns rows deleted. Evicting
+     * *unsent* rows is bounded data-loss protection (see [Outbox]).
      */
     @Query(
-        "DELETE FROM outbox_items WHERE id IN (" +
-            "SELECT id FROM outbox_items ORDER BY created_at ASC, id ASC LIMIT :n)",
+        "DELETE FROM outbox_items WHERE id NOT IN (" +
+            "SELECT id FROM outbox_items ORDER BY created_at DESC, id DESC LIMIT :maxItems)",
     )
-    suspend fun deleteOldest(n: Int): Int
+    suspend fun evictToCap(maxItems: Int): Int
 }
