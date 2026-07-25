@@ -467,9 +467,9 @@ the `PidCodec` + core contracts are the reusable, portable parts.
   under Robolectric; relay logic driven by `FakeCredentialStore`). At-least-once (Fix 4) — no
   client idempotency key, a lost `201` re-sends+duplicates — verified documented + tested.
   Ledger **`C-1TQZ` resolved** (atomic single-statement `evictToCap`). Two **non-blocking**
-  follow-ups deferred (logged to the ledger): `429`/`408` currently map to `Terminal` (could be
-  retryable), and a `401` parks rows `PENDING` indefinitely (M5 should surface it to the
-  operator). Scope held to M4 (no app UI/GPS/E2E-Map/approval-automation/`tpd_`). Gate green
+  follow-ups deferred (logged to the ledger): `429`/`408` mapping to `Terminal` (**since fixed
+  under `C-4T93`**, below), and a `401` parks rows `PENDING` indefinitely (M5 should surface it
+  to the operator). Scope held to M4 (no app UI/GPS/E2E-Map/approval-automation/`tpd_`). Gate green
   (**42** `gateway-core` after round-2 = **85 total**; `failures=0 errors=0`).
 - **Diff-stage rubber-duck (M5 implementation, `feat/m5-e2e` / PR #9):** **ran** on the M5
   code diff. `verifier` verdict **"M5 conforms"** (7/7 checklist, gate re-run green); the
@@ -511,3 +511,21 @@ the `PidCodec` + core contracts are the reusable, portable parts.
   **docs-only**. Per AGENTS §6 the docs carve-out applies (no deps/CI/IaC/security/behavioral
   config touched), **but** this plan **gates** the Phase-0 implementation, which is *not*
   carved out — the implementer's diff-stage rubber-duck is required there (recorded above).
+- **Follow-up chore `C-4T93` (relay `429`/`408` → retryable, `fix/relay-429-408-retryable`):**
+  **plan-stage rubber-duck ran → 1 blocking finding** — the initial plan clamped `Retry-After`
+  *down* to `maxBackoff`, which would retry a `429` prematurely and eventually exhaust
+  `maxAttempts`, failing rows the server would still accept. **Revised before implementing:** a
+  `Retry-After` **> `maxBackoff` now defers** (batch stays `PENDING`, no attempt counted, drain
+  stops for a later pass, surfaced via `DrainReport.retryAfterMillis`); a `Retry-After`
+  ≤ `maxBackoff` is honored verbatim in the existing bounded-retry loop. **Diff-stage code-review
+  ran → no blocking issues**; one **Low** defensive edge case applied (clamp `seconds * 1000`
+  against `Long` overflow so an absurd header can't wrap negative and defeat the defer check).
+  Verified independently: `Retryable.retryAfterMillis` is a trailing `= null` param (backward
+  compatible — all existing construction sites + `is Retryable` matches unaffected); the `when`
+  order (`401`/`408`/`429`/`5xx`/`else`) can't misroute; attempts accounting for the
+  ≤ `maxBackoff` path is unchanged. Gate green (**`gateway-core` 48** after **+6 tests** — 4
+  client status-map + 2 drainer honor/defer; lint clean; `failures=0 errors=0`). Also **resolved
+  `C-1TQZ`** — already implemented+tested (atomic `evictToCap` + the `atomic cap does not
+  over-evict` test) in merged PR #8; ledger chore was stale. Scope held to `gateway-core` relay
+  (no app/obdii/UI). **current-state:** not-affected (thin doc; internal retry-mapping refinement
+  doesn't move the high-level snapshot).

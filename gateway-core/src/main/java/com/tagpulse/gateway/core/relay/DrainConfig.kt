@@ -45,6 +45,9 @@ data class DrainConfig(
  * @property batches number of `POST /tag-reads/batch` requests issued.
  * @property credentialError non-null if the drain aborted on a `401` — the
  *   remaining rows stay `PENDING` (not failed) so a fixed credential lets them flow.
+ * @property retryAfterMillis non-null if the drain stopped early honoring a server
+ *   `Retry-After` (`429`) longer than `maxBackoff` — the batch (and any later rows)
+ *   stay `PENDING` for a future pass; no rows are failed.
  */
 data class DrainReport(
     val sent: Int = 0,
@@ -53,4 +56,5 @@ data class DrainReport(
     val purged: Int = 0,
     val batches: Int = 0,
     val credentialError: String? = null,
+    val retryAfterMillis: Long? = null,
 )

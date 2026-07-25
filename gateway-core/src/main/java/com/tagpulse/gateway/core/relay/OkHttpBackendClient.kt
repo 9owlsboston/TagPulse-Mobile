@@ -10,6 +10,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.io.IOException
 
 /**
@@ -55,6 +56,15 @@ class OkHttpBackendClient(
                             // Do NOT include the body verbatim (avoid leaking the key
                             // if the server ever echoed it) — a fixed, safe message.
                             BatchResult.CredentialError("ingest rejected the API key (401)")
+                        resp.code == 408 ->
+                            // Request Timeout — transient; back off and retry.
+                            BatchResult.Retryable("request timeout (408)")
+                        resp.code == 429 ->
+                            // Too Many Requests — transient; honor Retry-After if given.
+                            BatchResult.Retryable(
+                                "rate limited (429)",
+                                retryAfterMillis = parseRetryAfterMillis(resp),
+                            )
                         resp.code in 500..599 ->
                             BatchResult.Retryable("server error ${resp.code}")
                         else ->
@@ -96,6 +106,21 @@ class OkHttpBackendClient(
                 ProvisionResult.Failed(null, "network error: ${e.javaClass.simpleName}")
             }
         }
+    }
+
+    /**
+     * The `Retry-After` directive on a `429`, in millis — **delta-seconds form only**
+     * (e.g. `Retry-After: 30` → `30_000`). The HTTP-date form is not honored (returns
+     * `null` → the drainer falls back to its exponential backoff); delta-seconds is the
+     * form servers use for rate limiting, and this keeps the transport wall-clock-free.
+     * A negative, non-numeric, or absurdly large (overflowing) value is ignored.
+     */
+    private fun parseRetryAfterMillis(resp: Response): Long? {
+        val seconds = resp.header("Retry-After")?.trim()?.toLongOrNull() ?: return null
+        // Ignore negatives and clamp against Long overflow on `* 1000` (a wrapped
+        // negative would defeat the drainer's defer check).
+        if (seconds < 0 || seconds > Long.MAX_VALUE / 1000) return null
+        return seconds * 1000
     }
 
     private fun parseBatchBody(payload: String): BatchResult =
