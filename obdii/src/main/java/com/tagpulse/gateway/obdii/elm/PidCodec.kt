@@ -29,6 +29,17 @@ object PidCodec {
 
     private val HEX_CHARS = "0123456789ABCDEF".toSet()
 
+    // Mode 09 PID 02 (VIN) positive-response header + NODI byte: `49 02 01`.
+    private const val VIN_HEADER_NODI = "490201"
+
+    /** VIN length in characters and the hex-string length that encodes it. */
+    private const val VIN_LEN = 17
+    private const val VIN_HEX_LEN = VIN_LEN * 2
+
+    // A VIN is uppercase letters + digits (the ISO-3779 subset excludes I/O/Q, but the
+    // decoder accepts the full alphanumeric superset — the app's Vin.isValid is authoritative).
+    private val VIN_ALPHANUMERIC = (('A'..'Z') + ('0'..'9')).toSet()
+
     /**
      * Decode an RPM (`010C`) response into engine RPM.
      *
@@ -83,6 +94,82 @@ object PidCodec {
             }
             is Frame.Bad -> PidReading.Failure(frame.reason)
         }
+
+    /**
+     * Decode a Mode 09 PID 02 **VIN** (`0902`) response into the 17-character VIN
+     * (ledger `C-RYH7` Increment 2b).
+     *
+     * Unlike the single-frame Mode 01 PIDs, the VIN is a **multi-frame** response.
+     * Scoped to **CAN / ISO 15765-4** (the ISO-TP coalesced form ELM327 emits for
+     * modern vehicles): the positive response is `49 02 01` (mode+0x40, PID, NODI=1)
+     * followed by the 17 VIN bytes as ASCII, delivered across ISO-TP segment lines
+     * (`0:`/`1:`/`2:`), optionally preceded by a length line (`014`), with per-frame
+     * CAN padding. Legacy J1850/ISO-9141 multi-packet VINs (repeated `49 02 <seq>`
+     * headers) are **not** parsed — they cleanly return [ObdError.MALFORMED] so the
+     * bind flow falls back to manual VIN entry (documented; pre-2008 vehicles only).
+     *
+     * Robustness: every `490201` candidate is evaluated (guards against a stray
+     * `4902` in padding/junk and multi-ECU echoes); a candidate is accepted only if
+     * it yields exactly 17 alphanumeric VIN bytes. Exactly one **distinct** valid VIN
+     * → [VinReading.Value]; zero or conflicting candidates → [VinReading.Failure].
+     * Never throws.
+     */
+    fun decodeVin(response: String): VinReading {
+        val text = response.uppercase()
+
+        when {
+            text.contains("NO DATA") -> return VinReading.Failure(ObdError.NO_DATA)
+            text.contains("UNABLE TO CONNECT") -> return VinReading.Failure(ObdError.UNABLE_TO_CONNECT)
+            text.contains('?') -> return VinReading.Failure(ObdError.UNSUPPORTED_COMMAND)
+        }
+
+        // Concatenate hex from every line, dropping an ISO-TP segment index ("<hex>:")
+        // and any non-hex line (echo, blank, the '>' prompt).
+        val hex = StringBuilder()
+        for (rawLine in text.split('\r', '\n', '>')) {
+            var line = rawLine.trim()
+            val colon = line.indexOf(':')
+            // A leading segment index is 1–2 hex digits then ':'. Strip it; a bare
+            // length line ("014", no colon) is left in — indexOf("490201") skips it.
+            if (colon in 1..2 && line.take(colon).all { it in HEX_CHARS }) {
+                line = line.substring(colon + 1)
+            }
+            val cleaned = line.filterNot { it.isWhitespace() }
+            if (cleaned.isEmpty() || cleaned.any { it !in HEX_CHARS }) continue
+            hex.append(cleaned)
+        }
+        val all = hex.toString()
+
+        // Evaluate every 49 02 01 (header + NODI=1) candidate; keep the distinct
+        // 17-char alphanumeric VINs.
+        val vins = LinkedHashSet<String>()
+        var from = all.indexOf(VIN_HEADER_NODI)
+        while (from >= 0) {
+            val start = from + VIN_HEADER_NODI.length
+            if (start + VIN_HEX_LEN <= all.length) {
+                val vinHex = all.substring(start, start + VIN_HEX_LEN)
+                decodeAsciiVin(vinHex)?.let { vins.add(it) }
+            }
+            from = all.indexOf(VIN_HEADER_NODI, from + VIN_HEADER_NODI.length)
+        }
+
+        return when (vins.size) {
+            1 -> VinReading.Value(vins.first())
+            else -> VinReading.Failure(ObdError.MALFORMED) // 0 (none) or >1 (ambiguous)
+        }
+    }
+
+    /** Decode 34 hex chars → 17 ASCII chars; null unless all 17 are VIN-alphanumeric. */
+    private fun decodeAsciiVin(vinHex: String): String? {
+        val sb = StringBuilder(VIN_LEN)
+        for (i in 0 until VIN_HEX_LEN step 2) {
+            val code = vinHex.substring(i, i + 2).toIntOrNull(16) ?: return null
+            val c = code.toChar()
+            if (c !in VIN_ALPHANUMERIC) return null
+            sb.append(c)
+        }
+        return sb.toString()
+    }
 
     /**
      * The reassembled-frame parse shared by every decoder: strip echoes /

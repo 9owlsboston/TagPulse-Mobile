@@ -3,6 +3,7 @@ package com.tagpulse.mobile.bind
 import com.tagpulse.gateway.core.relay.AssetLookupResult
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,7 +19,10 @@ class VehicleBindingCoordinatorTest {
 
     private val validVin = "1HGCM82633A004352"
 
-    private class Harness(private val result: AssetLookupResult) {
+    private class Harness(
+        private val result: AssetLookupResult,
+        private val vinRead: VinReadOutcome? = null,
+    ) {
         var resolveCalls = 0; private set
         var lastResolveArg: String? = null; private set
         val persisted = mutableListOf<VehicleBinding>()
@@ -26,6 +30,7 @@ class VehicleBindingCoordinatorTest {
         val coordinator = VehicleBindingCoordinator(
             resolve = { vin -> resolveCalls++; lastResolveArg = vin; result },
             persist = { persisted += it },
+            readVinFromVehicle = vinRead?.let { outcome -> { outcome } },
         )
     }
 
@@ -91,6 +96,40 @@ class VehicleBindingCoordinatorTest {
         val h = Harness(AssetLookupResult.NotFound)
         h.coordinator.confirm() // from Idle
         assertTrue(h.persisted.isEmpty())
+        assertEquals(BindState.Idle, h.coordinator.state.value)
+    }
+
+    @Test
+    fun `readVin success resolves the read VIN to Confirming`() = runBlocking {
+        val h = Harness(
+            result = AssetLookupResult.Resolved(assetId = "asset-9", displayLabel = "MASS-1234"),
+            vinRead = VinReadOutcome.Read("1hgcm82633a004352"),
+        )
+        assertTrue(h.coordinator.canReadVin)
+
+        h.coordinator.readVin()
+
+        // The read VIN was canonicalized + resolved, landing in Confirming with the plate.
+        assertEquals(validVin, h.lastResolveArg)
+        assertEquals(BindState.Confirming(validVin, "MASS-1234", "asset-9"), h.coordinator.state.value)
+    }
+
+    @Test
+    fun `readVin failure is a READ error and does not resolve`() = runBlocking {
+        val h = Harness(
+            result = AssetLookupResult.NotFound,
+            vinRead = VinReadOutcome.Failed("unsupported"),
+        )
+        h.coordinator.readVin()
+        assertEquals(0, h.resolveCalls)
+        assertEquals(BindState.ErrorKind.READ, (h.coordinator.state.value as BindState.Error).kind)
+    }
+
+    @Test
+    fun `canReadVin is false and readVin is a no-op when no reader is wired`() = runBlocking {
+        val h = Harness(AssetLookupResult.NotFound) // no vinRead
+        assertFalse(h.coordinator.canReadVin)
+        h.coordinator.readVin()
         assertEquals(BindState.Idle, h.coordinator.state.value)
     }
 }

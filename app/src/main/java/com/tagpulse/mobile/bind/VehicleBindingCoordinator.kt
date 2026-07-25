@@ -26,12 +26,16 @@ import kotlinx.coroutines.sync.Mutex
 class VehicleBindingCoordinator(
     private val resolve: suspend (vin: String) -> AssetLookupResult,
     private val persist: (VehicleBinding) -> Unit,
+    private val readVinFromVehicle: (suspend () -> VinReadOutcome)? = null,
 ) {
 
     private val _state = MutableStateFlow<BindState>(BindState.Idle)
 
     /** The observable bind state the UI collects. */
     val state: StateFlow<BindState> = _state.asStateFlow()
+
+    /** Whether the OBD-II VIN auto-read tier is available (a reader is wired). */
+    val canReadVin: Boolean get() = readVinFromVehicle != null
 
     private val lock = Mutex()
 
@@ -53,43 +57,7 @@ class VehicleBindingCoordinator(
                 )
                 return
             }
-            _state.value = BindState.Resolving
-
-            when (val result = resolve.invoke(vin)) {
-                is AssetLookupResult.Resolved -> {
-                    val plate = result.displayLabel
-                    if (plate.isNullOrBlank()) {
-                        // The plate is the operator's confirmation signal — without it we
-                        // can't safely confirm the right vehicle.
-                        _state.value = BindState.Error(
-                            BindState.ErrorKind.NO_PLATE,
-                            "This vehicle has no plate on file — ask an admin to set it, then retry.",
-                        )
-                    } else {
-                        _state.value = BindState.Confirming(vin, plate, result.assetId)
-                    }
-                }
-                is AssetLookupResult.NotFound ->
-                    _state.value = BindState.Error(
-                        BindState.ErrorKind.NOT_FOUND,
-                        "No vehicle is registered for that VIN — check the VIN or ask an admin to register it.",
-                    )
-                is AssetLookupResult.CredentialError ->
-                    _state.value = BindState.Error(
-                        BindState.ErrorKind.CREDENTIAL,
-                        "The backend rejected the credentials — re-enrol the device / check the API key.",
-                    )
-                is AssetLookupResult.Retryable ->
-                    _state.value = BindState.Error(
-                        BindState.ErrorKind.NETWORK,
-                        "Couldn't reach the backend — check connectivity and try again.",
-                    )
-                is AssetLookupResult.Terminal ->
-                    _state.value = BindState.Error(
-                        BindState.ErrorKind.NETWORK,
-                        "The VIN lookup failed (${result.statusCode}) — try again.",
-                    )
-            }
+            resolveCore(vin)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -100,6 +68,94 @@ class VehicleBindingCoordinator(
             )
         } finally {
             lock.unlock()
+        }
+    }
+
+    /**
+     * Auto-read the VIN over OBD-II (Mode 09) and resolve it (ledger `C-RYH7` §2b) — the
+     * zero-touch capture: on a successful read the VIN flows straight into [resolveCore]
+     * (→ [BindState.Confirming]); a read failure is an [BindState.ErrorKind.READ]. A no-op
+     * if no reader is wired. Re-entrant calls are ignored while one is in flight.
+     */
+    suspend fun readVin() {
+        val reader = readVinFromVehicle ?: return
+        if (!lock.tryLock()) {
+            Log.i(TAG, "readVin ignored: an attempt is already in flight")
+            return
+        }
+        try {
+            _state.value = BindState.Reading
+            when (val outcome = reader.invoke()) {
+                is VinReadOutcome.Read -> {
+                    val vin = Vin.canonical(outcome.vin)
+                    if (!Vin.isValid(vin)) {
+                        _state.value = BindState.Error(
+                            BindState.ErrorKind.READ,
+                            "The vehicle reported an unreadable VIN — enter it manually.",
+                        )
+                    } else {
+                        resolveCore(vin)
+                    }
+                }
+                is VinReadOutcome.Failed ->
+                    _state.value = BindState.Error(
+                        BindState.ErrorKind.READ,
+                        "Couldn't read the VIN from the vehicle — enter it manually.",
+                    )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Log.w(TAG, "readVin failed unexpectedly: ${e.javaClass.simpleName}")
+            _state.value = BindState.Error(
+                BindState.ErrorKind.INTERNAL,
+                "Reading the VIN failed unexpectedly. Please try again.",
+            )
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    /**
+     * Resolve a **canonical, already-validated** VIN against the backend and set the
+     * next [BindState]. Must be called with [lock] held (it never re-locks).
+     */
+    private suspend fun resolveCore(vin: String) {
+        _state.value = BindState.Resolving
+        when (val result = resolve.invoke(vin)) {
+            is AssetLookupResult.Resolved -> {
+                val plate = result.displayLabel
+                if (plate.isNullOrBlank()) {
+                    // The plate is the operator's confirmation signal — without it we
+                    // can't safely confirm the right vehicle.
+                    _state.value = BindState.Error(
+                        BindState.ErrorKind.NO_PLATE,
+                        "This vehicle has no plate on file — ask an admin to set it, then retry.",
+                    )
+                } else {
+                    _state.value = BindState.Confirming(vin, plate, result.assetId)
+                }
+            }
+            is AssetLookupResult.NotFound ->
+                _state.value = BindState.Error(
+                    BindState.ErrorKind.NOT_FOUND,
+                    "No vehicle is registered for that VIN — check the VIN or ask an admin to register it.",
+                )
+            is AssetLookupResult.CredentialError ->
+                _state.value = BindState.Error(
+                    BindState.ErrorKind.CREDENTIAL,
+                    "The backend rejected the credentials — re-enrol the device / check the API key.",
+                )
+            is AssetLookupResult.Retryable ->
+                _state.value = BindState.Error(
+                    BindState.ErrorKind.NETWORK,
+                    "Couldn't reach the backend — check connectivity and try again.",
+                )
+            is AssetLookupResult.Terminal ->
+                _state.value = BindState.Error(
+                    BindState.ErrorKind.NETWORK,
+                    "The VIN lookup failed (${result.statusCode}) — try again.",
+                )
         }
     }
 

@@ -40,6 +40,19 @@ class ObdiiDriverTest {
     )
 
     @Test
+    fun `readVin connects, handshakes, and returns the decoded VIN`() = runTest {
+        val script = fullScript + ("0902" to listOf("014\r0:490201314434\r1:47503030523535\r2:42313233343536\r\r>"))
+        val driver = ObdiiDriver.create(FakeBleTransport(script))
+
+        val reading = driver.readVin()
+
+        assertEquals(
+            com.tagpulse.gateway.obdii.elm.VinReading.Value("1D4GP00R55B123456"),
+            reading,
+        )
+    }
+
+    @Test
     fun `driver implements the core seam and declares OBDII modality`() {
         val driver: GatewayDriver = ObdiiDriver()
         assertEquals(Modality.OBDII, driver.modality)

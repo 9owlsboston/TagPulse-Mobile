@@ -38,6 +38,8 @@ import com.tagpulse.mobile.bind.BindState
  * @param state the current bind state to render.
  * @param onResolve invoked with the raw VIN when the operator taps **Look up vehicle**.
  * @param onConfirm invoked when the operator confirms the shown plate/vehicle.
+ * @param onReadFromVehicle if non-null, a **Read VIN from vehicle** affordance is shown
+ *   (OBD-II Mode 09 auto-read, Increment 2b); null hides it (manual VIN entry only).
  */
 @Composable
 fun BindScreen(
@@ -45,8 +47,10 @@ fun BindScreen(
     onResolve: (String) -> Unit,
     onConfirm: () -> Unit,
     modifier: Modifier = Modifier,
+    onReadFromVehicle: (() -> Unit)? = null,
 ) {
     var vin by rememberSaveable { mutableStateOf("") }
+    val busy = state is BindState.Resolving || state is BindState.Reading
 
     Column(
         modifier = modifier
@@ -57,9 +61,19 @@ fun BindScreen(
     ) {
         Text(text = "Bind a vehicle", style = MaterialTheme.typography.headlineSmall)
         Text(
-            text = "Enter the vehicle's VIN, then confirm the license plate that comes back.",
+            text = "Read the VIN from the vehicle or enter it, then confirm the license plate.",
             style = MaterialTheme.typography.bodyMedium,
         )
+
+        if (onReadFromVehicle != null) {
+            OutlinedButton(
+                onClick = onReadFromVehicle,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = "Read VIN from vehicle")
+            }
+        }
 
         OutlinedTextField(
             value = vin,
@@ -67,13 +81,13 @@ fun BindScreen(
             label = { Text("VIN (17 characters)") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
-            enabled = state !is BindState.Resolving,
+            enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
         )
 
         Button(
             onClick = { onResolve(vin) },
-            enabled = state !is BindState.Resolving,
+            enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = "Look up vehicle")
@@ -104,7 +118,7 @@ private fun StatusCard(state: BindState, modifier: Modifier = Modifier) {
             Text(text = "Status", style = MaterialTheme.typography.titleMedium)
             Text(text = state.headline(), style = MaterialTheme.typography.bodyLarge)
 
-            if (state is BindState.Resolving) {
+            if (state is BindState.Resolving || state is BindState.Reading) {
                 CircularProgressIndicator()
             }
 
@@ -129,7 +143,8 @@ private fun StatusCard(state: BindState, modifier: Modifier = Modifier) {
 }
 
 private fun BindState.headline(): String = when (this) {
-    BindState.Idle -> "Enter the vehicle VIN."
+    BindState.Idle -> "Read or enter the vehicle VIN."
+    BindState.Reading -> "Reading the VIN from the vehicle…"
     BindState.Resolving -> "Looking up the vehicle…"
     is BindState.Confirming -> "Vehicle found — confirm the plate."
     is BindState.Bound -> "Vehicle bound."

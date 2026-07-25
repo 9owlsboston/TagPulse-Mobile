@@ -48,6 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     confirms the vehicle *identity* (plate); the Map link additionally requires an admin-set
     `binding_kind='device'` binding = VIN (verified in HIL). **Increment 2b** (OBD-II Mode 09
     auto-read) + **2c** (VIN barcode) are staged.
+- **OBD-II Mode 09 VIN auto-read** (ledger `C-RYH7`, Increment 2b) — the bind screen gains a
+  **Read VIN from vehicle** button that reads the VIN straight from the ECU (zero-touch, OQ3
+  tier-1), feeding the same resolve→confirm bind flow. `PidCodec.decodeVin` is a pure
+  multi-frame (ISO-TP, CAN-scoped) parser — it evaluates every `49 02 01` candidate and accepts
+  only one distinct 17-char VIN (else `MALFORMED` → manual-entry fallback; legacy J1850/ISO
+  vehicles fall back too). `Elm327Session.readVin()` (`0902`) + `ObdiiDriver.readVin()` mirror
+  the existing read path; a `VinReader` seam wires it into `VehicleBindingCoordinator.readVin()`.
+  +13 unit tests (decode matrix, session, driver, coordinator). The real dongle read is **HIL**.
+
 
   - **`EnrolmentCoordinator`** (`app`, mirrors `ScanCoordinator`) exposes an `EnrolState`
     `StateFlow` (`Idle → Provisioning → Enrolled | Error`). One `enrol(input)`: validate

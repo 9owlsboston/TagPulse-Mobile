@@ -16,6 +16,7 @@ import com.tagpulse.gateway.obdii.ObdiiConfig
 import com.tagpulse.gateway.obdii.ObdiiDriver
 import com.tagpulse.mobile.bind.VehicleBindingCoordinator
 import com.tagpulse.mobile.bind.VehicleBindingStore
+import com.tagpulse.mobile.bind.VinReadOutcome
 import com.tagpulse.mobile.enrol.EnrolmentCoordinator
 import com.tagpulse.mobile.location.AndroidLocationProvider
 import com.tagpulse.mobile.scan.Relay
@@ -79,6 +80,10 @@ class AppContainer(context: Context) {
     val vehicleBindingCoordinator: VehicleBindingCoordinator = VehicleBindingCoordinator(
         resolve = { vin -> backendClient.resolveAssetByBinding(vin) },
         persist = { binding -> vehicleBinding.store(binding) },
+        // OBD-II Mode 09 VIN auto-read (Increment 2b). `driver` is read lazily at invocation
+        // (declared below); an unsupported/failed read maps to VinReadOutcome.Failed → the
+        // operator falls back to manual VIN entry.
+        readVinFromVehicle = { toVinReadOutcome(driver.readVin()) },
     )
 
     /** Durable outbox over the file-backed Room DB (A4 restart-safe). */
@@ -114,6 +119,15 @@ class AppContainer(context: Context) {
             vehicleBinding.current?.let { Subject(SubjectKind.VEHICLE, id = it.vin) }
         },
     )
+
+    /** Map the OBD-II [com.tagpulse.gateway.obdii.elm.VinReading] onto the app seam outcome. */
+    private fun toVinReadOutcome(
+        reading: com.tagpulse.gateway.obdii.elm.VinReading,
+    ): VinReadOutcome = when (reading) {
+        is com.tagpulse.gateway.obdii.elm.VinReading.Value -> VinReadOutcome.Read(reading.vin)
+        is com.tagpulse.gateway.obdii.elm.VinReading.Failure ->
+            VinReadOutcome.Failed("VIN read failed: ${reading.reason}")
+    }
 
     companion object {
         /**

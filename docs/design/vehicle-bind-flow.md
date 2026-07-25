@@ -30,8 +30,10 @@ SHA `71ed1e6`; design `TagPulse:docs/design/asset-display-label-vin-lookup.md`).
 
 - **Increment 2a (this doc):** capture VIN via **manual entry**, validate, resolve+confirm
   (plate), persist, wire `tag_id`. Gate-green with fakes; live resolve/Map are HIL.
-- **Increment 2b:** OBD-II **Mode 09** auto-read (new multi-frame ISO-TP parsing; today
-  `PidCodec` is single-frame Mode 01) — the zero-touch capture tier.
+- **Increment 2b (done):** OBD-II **Mode 09** VIN auto-read — `PidCodec.decodeVin`
+  (multi-frame ISO-TP parser, CAN-scoped) + `Elm327Session.readVin()` + `ObdiiDriver.readVin()`;
+  a `VinReader` seam feeds the same bind flow (auto-read → resolve → confirm plate). The
+  zero-touch capture tier; the live read is HIL.
 - **Increment 2c:** VIN **barcode** capture (reuses the Increment 1b ML Kit scanner for the
   door-jamb Code 39 label). Windshield OCR remains deferred (OQ3).
 
@@ -152,3 +154,25 @@ binding). **Increment 2b/2c** (Mode 09, barcode) are staged.
   the VIN binding + the admin-set `binding_kind='device'` binding). **Increment 2b** (OBD-II
   Mode 09 auto-read) and **2c** (VIN barcode) are staged.
 - **current-state:** updated (the handset can now bind a vehicle by VIN; the placeholder is gone).
+
+### Increment 2b — OBD-II Mode 09 VIN auto-read
+
+- **Plan-stage rubber-duck:** **ran → 2 blocking findings**, folded in: (1) the parser
+  only handled CAN/ISO-TP — **scoped to CAN**, and legacy J1850/ISO multi-packet responses
+  (repeated `49 02 <seq>` headers) cleanly decode to `MALFORMED` → manual-entry fallback
+  (documented); (2) blindly taking the first `4902` was unsafe — the decoder now evaluates
+  **every `490201` candidate** (validating the NODI byte) and accepts only when **exactly one
+  distinct** 17-char alphanumeric VIN emerges (multi-ECU/junk/ambiguous → `MALFORMED`).
+- **Diff-stage rubber-duck (code-review):** **ran → no blocking issues.** Traced the parser
+  (line-index strip handles `10:`; candidate loop can't miss/loop/overlap; distinct-set →
+  `Value` iff size 1), the shared `resolveCore` under the `Mutex` (no re-lock/deadlock, unlock
+  on every path), the lazy `driver` capture in `AppContainer` (read at invocation — no
+  null-at-init), the `readVin` session path (mirrors `readRpm`; one `exchange` gets all ISO-TP
+  frames), and the auto-read UX (a garbage VIN can't silently bind — `Vin.isValid` + backend
+  resolve + plate confirmation guard it).
+- **Verification:** `:obdii:testDebugUnitTest` (**55**, incl. **+9** `decodeVin` + **+3**
+  `readVin` session + **+1** driver) + `:app:testDebugUnitTest` (**50**, incl. **+3**
+  coordinator `readVin`) + `:gateway-core:testDebugUnitTest` (**58**) green; `:app:lintDebug`
+  clean; `assembleDebug` built. `failures=0 errors=0`.
+- **HIL (not run here):** the real dongle Mode 09 read (not all ECUs support `0902`; CAN
+  vehicles only — legacy falls back to manual entry). **Increment 2c** (VIN barcode) staged.

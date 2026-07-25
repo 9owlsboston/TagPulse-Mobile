@@ -112,6 +112,44 @@ class Elm327Session(
     }
 
     /**
+     * Read the vehicle **VIN** via Mode 09 PID 02 (`0902`) once (ledger `C-RYH7`
+     * Increment 2b). Returns the 17-character VIN or a clean [VinReading]. On success
+     * the VIN is logged and the state returns to [ConnectionState.Ready]; on failure
+     * the state becomes [ConnectionState.Error]. Never throws for a per-command problem.
+     *
+     * The session must already be [ConnectionState.Ready] (call [connect] first).
+     * Scoped to CAN vehicles (see [PidCodec.decodeVin]); an unsupported/legacy response
+     * decodes to a [VinReading.Failure] so the caller can fall back to manual VIN entry.
+     */
+    suspend fun readVin(): VinReading {
+        _state.value = ConnectionState.Reading
+        val reading = requestVin(retriesLeft = maxRetries)
+        when (reading) {
+            is VinReading.Value -> {
+                logger("OBD-II VIN = ${reading.vin}")
+                _state.value = ConnectionState.Ready
+            }
+            is VinReading.Failure -> fail(reading.reason, "VIN read failed: ${reading.reason}")
+        }
+        return reading
+    }
+
+    private suspend fun requestVin(retriesLeft: Int): VinReading =
+        try {
+            PidCodec.decodeVin(exchange(PID_VIN))
+        } catch (e: TimeoutCancellationException) {
+            if (retriesLeft > 0) requestVin(retriesLeft - 1) else VinReading.Failure(ObdError.TIMEOUT)
+        } catch (e: BleDisconnectedException) {
+            if (retriesLeft > 0 && reconnect()) {
+                requestVin(retriesLeft - 1)
+            } else {
+                VinReading.Failure(ObdError.DISCONNECTED)
+            }
+        } catch (e: BleException) {
+            VinReading.Failure(ObdError.LINK_ERROR)
+        }
+
+    /**
      * Read the full four-PID snapshot (`010C`, `010D`, `0105`, `012F`) in sequence
      * and assemble an [ObdSnapshot] (plan §4). The session must already be
      * [ConnectionState.Ready] (call [connect] first).
@@ -256,6 +294,9 @@ class Elm327Session(
 
         /** ELM327 PID request for fuel level (mode 01, PID 2F). */
         const val PID_FUEL = "012F"
+
+        /** ELM327 request for the vehicle VIN (mode 09, PID 02). */
+        const val PID_VIN = "0902"
 
         /** Command terminator ELM327 expects (carriage return). */
         private const val TERMINATOR = "\r"
