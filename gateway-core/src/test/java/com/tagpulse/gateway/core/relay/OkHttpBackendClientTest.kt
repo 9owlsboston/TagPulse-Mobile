@@ -149,6 +149,13 @@ class OkHttpBackendClientTest {
         assertEquals("POST", recorded.method)
         assertEquals("/devices/provision", recorded.path)
         assertEquals("prov-key-xyz", recorded.getHeader("X-Provisioning-Key"))
+        // Default device_type is the phone-gateway type, not "rfid_reader".
+        val body: Map<String, Any?> = mapper.readValue(
+            recorded.body.readUtf8(),
+            mapper.typeFactory.constructMapType(Map::class.java, String::class.java, Any::class.java),
+        )
+        assertEquals("phone-1", body["name"])
+        assertEquals("mobile_gateway", body["device_type"])
     }
 
     @Test

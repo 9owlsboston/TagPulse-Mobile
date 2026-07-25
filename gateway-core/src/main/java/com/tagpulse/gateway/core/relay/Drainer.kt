@@ -82,6 +82,7 @@ class Drainer(
 
         val purged = outbox.purgeExpired(clock())
         var sent = 0
+        var rejected = 0
         var failed = 0
         var batches = 0
 
@@ -91,11 +92,19 @@ class Drainer(
 
             batches++
             when (val outcome = deliverBatch(batch, gatewayUuid)) {
-                is BatchDelivery.Sent -> sent += batch.size
+                is BatchDelivery.Sent -> {
+                    sent += batch.size
+                    // Surface (don't act on) the backend's clock-rejected count: the
+                    // rows still went SENT (no per-row ids to selectively fail, and
+                    // purgeExpired pre-drops clock-terminal rows) — plan §7 "keep
+                    // rejected for inspection".
+                    rejected += outcome.rejected
+                }
                 is BatchDelivery.Failed -> failed += batch.size
                 is BatchDelivery.CredentialBlocked ->
                     return DrainReport(
                         sent = sent,
+                        rejected = rejected,
                         failed = failed,
                         purged = purged,
                         batches = batches,
@@ -103,7 +112,13 @@ class Drainer(
                     )
             }
         }
-        return DrainReport(sent = sent, failed = failed, purged = purged, batches = batches)
+        return DrainReport(
+            sent = sent,
+            rejected = rejected,
+            failed = failed,
+            purged = purged,
+            batches = batches,
+        )
     }
 
     /**
@@ -123,7 +138,7 @@ class Drainer(
                 // ack arrived, so commit SENT.
                 for (item in batch) outbox.transition(item.id, OutboxState.SENT, item.attempts)
                 Log.i(TAG, "batch of ${batch.size} accepted (ingested=${result.ingested}, rejected=${result.rejected})")
-                BatchDelivery.Sent
+                BatchDelivery.Sent(rejected = result.rejected)
             }
 
             is BatchResult.Terminal -> {
@@ -182,7 +197,8 @@ class Drainer(
     }
 
     private sealed interface BatchDelivery {
-        data object Sent : BatchDelivery
+        /** Accepted (`201`); [rejected] = the backend's clock-rejected count for the batch. */
+        data class Sent(val rejected: Int) : BatchDelivery
         data object Failed : BatchDelivery
         data class CredentialBlocked(val reason: String) : BatchDelivery
     }

@@ -89,6 +89,21 @@ class DrainerTest {
     }
 
     @Test
+    fun `backend rejected count is surfaced in the report while rows still go SENT`() = runBlocking {
+        outbox.enqueue(observation("veh-1"))
+        // 201 with a nonzero clock-rejected count: the rows still commit SENT (no
+        // per-row ids to selectively fail), but the count is surfaced for inspection.
+        val client = FakeBackendClient().enqueue(BatchResult.Accepted(ingested = 1, rejected = 2))
+
+        val report = drainer(client).drain()
+
+        assertEquals(2, report.rejected)
+        assertEquals(1, report.sent)
+        assertEquals(1, outbox.countInState(OutboxState.SENT))
+        assertEquals(0, outbox.countInState(OutboxState.PENDING))
+    }
+
+    @Test
     fun `repeated 5xx increments attempts, backs off, and eventually FAILS`() = runBlocking {
         val id = outbox.enqueue(observation("veh-1"))
         val client = FakeBackendClient().enqueue(BatchResult.Retryable("server error 500"))

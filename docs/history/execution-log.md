@@ -404,6 +404,23 @@ decision) + this log updated. New runtime deps in `:gateway-core`: `okhttp` (4.1
 `androidx.security:security-crypto` (1.1.0-alpha06); `okhttp-mockwebserver` test-only.
 Diff-stage rubber-duck: **pending** (post-implement gate green; verifier next).
 
+**Round-2 (post-verify, same branch `feat/m4-relay` / PR #8).** Both gates passed
+(`verifier` "M4 conforms" 6/6; code-review "no blocking issues"); two small fixes applied.
+(1) **Surface `rejected`** — `DrainReport` gained a `rejected` field and `drain()` now sums
+the backend's `201 {rejected}` across accepted batches (plan §7 "keep rejected for
+inspection"): purely an observability surface — rows still commit `SENT` (no per-row ids to
+selectively fail; `purgeExpired` pre-drops clock-terminal rows), behavior unchanged
+(**+1 `DrainerTest`**). (2) **Provision device-type** default `"rfid_reader"` →
+**`"mobile_gateway"`** (a phone gateway isn't an RFID reader; backend-verified free-form
+`str ≤50`, `~/ws/TagPulse` `schemas.py:142`) — kept caller-configurable; the provision test
+now pins the new default in the request body. Recorded the M4 diff-stage attestation in
+`docs/design/obdii-mve-plan.md` `## Review attestations` (mirrored into the PR #8 body,
+replacing "pending"); logged two **non-blocking** follow-ups to the ledger (`429`/`408`→
+`Terminal` could be retryable; `401` parks rows `PENDING` indefinitely → M5 should surface to
+the operator). Gate GREEN again (`lintDebug testDebugUnitTest assembleDebug` → `BUILD
+SUCCESSFUL`; gateway-core **42** [DrainerTest 10], obdii 42, app 1 = **85 total**,
+`failures=0 errors=0`); `docs-drift` clean.
+
 ### 2026-07-24 — OBDII MVE M3: normalize → durable Room outbox (restart-safe)
 
 Implemented milestone M3 of `docs/design/obdii-mve-plan.md` (§8 M3 row, §7 offline-first

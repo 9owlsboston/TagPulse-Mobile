@@ -33,11 +33,15 @@ interface BackendClient {
      * `X-Provisioning-Key` header (plan §5). Returns the pending `device_id`.
      * Admin **approval** (`POST /device-registry/{id}/approve`) is out-of-band and
      * deliberately **not** automated here.
+     *
+     * [deviceType] defaults to `"mobile_gateway"` — the MVE's phone-gateway device
+     * type. The backend `device_type` is a **free-form `str` (≤50 chars, no enum)**
+     * (`~/ws/TagPulse` `schemas.py:142`), so it stays a caller-configurable parameter.
      */
     suspend fun provisionDevice(
         provisioningKey: String,
         name: String,
-        deviceType: String = "rfid_reader",
+        deviceType: String = "mobile_gateway",
     ): ProvisionResult
 }
 

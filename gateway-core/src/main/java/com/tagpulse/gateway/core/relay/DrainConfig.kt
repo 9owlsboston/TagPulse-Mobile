@@ -37,6 +37,9 @@ data class DrainConfig(
  * Result of a [Drainer.drain] pass.
  *
  * @property sent rows moved `PENDING → SENT` (`201`).
+ * @property rejected backend clock-rejected rows across accepted batches
+ *   (`201 {rejected}`) — surfaced for inspection; the rows still went `SENT` (plan
+ *   §7 "keep rejected for inspection"), and stale rows are pre-dropped by the age purge.
  * @property failed rows parked `PENDING → FAILED` (terminal reject or exhausted retries).
  * @property purged stale rows dropped before draining (age cap).
  * @property batches number of `POST /tag-reads/batch` requests issued.
@@ -45,6 +48,7 @@ data class DrainConfig(
  */
 data class DrainReport(
     val sent: Int = 0,
+    val rejected: Int = 0,
     val failed: Int = 0,
     val purged: Int = 0,
     val batches: Int = 0,

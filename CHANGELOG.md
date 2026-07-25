@@ -26,8 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `accuracy_m`/`source=gps`). A `Drainer` purges stale rows **before** sending, batches
   at ≤ **500**, and on retryable failure bumps `attempts` with **full-jitter exponential
   backoff**, parking a batch `FAILED` at `maxAttempts` (surfaced, not dropped); on a `401`
-  it leaves rows `PENDING`. **Delivery is at-least-once (Fix 4):** no client idempotency
-  key, so a lost `201` re-sends and duplicates on the backend — documented and accepted.
+  it leaves rows `PENDING`. The `DrainReport` surfaces the backend's clock-`rejected` count
+  (plan §7 "keep rejected for inspection"). **Delivery is at-least-once (Fix 4):** no client
+  idempotency key, so a lost `201` re-sends and duplicates on the backend — documented and
+  accepted.
   New runtime deps in `:gateway-core`: `okhttp` and `androidx.security:security-crypto`
   (`okhttp-mockwebserver` test-only). Tests (no network, no device): OkHttp `MockWebServer`
   backend-client tests, pure mapping tests, Robolectric `Drainer` tests
