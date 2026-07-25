@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.tagpulse.mobile.di.AppContainer
+import com.tagpulse.mobile.enrol.EnrolState
+import com.tagpulse.mobile.enrol.EnrolmentCoordinator
 import com.tagpulse.mobile.scan.ScanCoordinator
 import kotlinx.coroutines.launch
 
@@ -37,11 +39,45 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier) {
-                    ScanRoute(coordinator = container.scanCoordinator)
+                    AppRoot(container = container)
                 }
             }
         }
     }
+}
+
+/**
+ * Top-level route: gates the app on enrolment (ledger `C-RYH7`). Renders the
+ * enrolment form until the handset is enrolled, then advances to the scan flow.
+ *
+ * The switch is **reactive**: it collects the [EnrolmentCoordinator] state, so a
+ * successful enrolment recomposes into [ScanRoute] without rebuilding the
+ * [AppContainer] — the shared credential store surfaces the new `device_id` (read at
+ * drain time) and `baseUrl` (read per request) to the already-constructed scan path.
+ */
+@Composable
+private fun AppRoot(container: AppContainer) {
+    val enrolState by container.enrolmentCoordinator.state.collectAsState()
+    val enrolled = enrolState is EnrolState.Enrolled || container.isEnrolled
+
+    if (enrolled) {
+        ScanRoute(coordinator = container.scanCoordinator)
+    } else {
+        EnrolRoute(coordinator = container.enrolmentCoordinator, state = enrolState)
+    }
+}
+
+/**
+ * Binds the [EnrolmentCoordinator] to [com.tagpulse.mobile.ui.EnrolScreen]. Manual
+ * entry only in Increment 1 (no QR affordance — the ML Kit scanner is Increment 1b).
+ */
+@Composable
+private fun EnrolRoute(coordinator: EnrolmentCoordinator, state: EnrolState) {
+    val scope = rememberCoroutineScope()
+    com.tagpulse.mobile.ui.EnrolScreen(
+        state = state,
+        onEnrol = { input -> scope.launch { coordinator.enrol(input) } },
+    )
 }
 
 /**

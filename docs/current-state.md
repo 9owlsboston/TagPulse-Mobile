@@ -1,6 +1,6 @@
 # Current state — TagPulse-Mobile
 
-> **Snapshot:** 2026-07-24. The single, always-current answer to *"where is this
+> **Snapshot:** 2026-07-25. The single, always-current answer to *"where is this
 > project right now?"* — a **supplement to the README**, not a design-doc rollup.
 > Lead with a human summary (a short plain-English paragraph a newcomer reads
 > top-to-bottom *without* opening links, then a diagram); keep the rest thin —
@@ -22,11 +22,15 @@ and the **Phase-0 MVE is code-complete — M0–M5 all merged**. The Android app
 green-zone slice: tap **"Scan vehicle"** → BLE-connect an ELM327 dongle → read a 4-PID
 snapshot → `normalize()` → attach a GPS fix → durable Room outbox → drain as a batched
 `POST /tag-reads/batch` (Keystore-backed tenant-key auth, at-least-once), surfaced on a
-Compose screen. Fully unit-tested (BLE fake + Robolectric + OkHttp MockWebServer + coordinator
-tests). **Remaining before it's demonstrably live: hardware-in-the-loop (HIL)** — a real BLE
-dongle, real GPS, real Keystore creds, and the live A6/A7 against a running dev tenant (a
-runnable, backend-validated E2E script exists at `scripts/e2e/a7-map-check.py`), plus the
-enrol/bind UX that writes real credentials (ledger `C-RYH7`).
+Compose screen. The handset is **enrolled** against a tenant first — a `device_id` is
+provisioned and the `baseUrl` + `tp_` ingest key land in the Keystore (ledger `C-RYH7`
+Increment 1) — the "Scan vehicle" screen is gated behind enrolment. Fully unit-tested (BLE
+fake + Robolectric + OkHttp MockWebServer + coordinator/enrolment tests). **Remaining before
+it's demonstrably live: hardware-in-the-loop (HIL)** — a real BLE dongle, real GPS, real
+Keystore creds, and the live A6/A7 against a running dev tenant (a runnable, backend-validated
+E2E script exists at `scripts/e2e/a7-map-check.py`), plus the enrolment **QR scanner**
+(Increment 1b) and the **vehicle VIN-bind** (Increment 2 — OBD-II Mode 09 + VIN barcode +
+plate label, backend-gated on the `binding_value = VIN` convention).
 
 ## Diagram
 
@@ -46,10 +50,14 @@ One line per area, each linking to the doc that owns the detail.
   `PidCodec` → `normalize()`), a `:gateway-core` **durable Room outbox** + **relay**
   (Keystore `CredentialStore`, OkHttp `BackendClient`, `Observation→TagReadCreate` mapping,
   `Drainer` → `POST /tag-reads/batch`, at-least-once), and the `:app` **"Scan vehicle" Compose
-  UI + GPS + composition root** wiring it end-to-end. MVE acceptance: **A1–A5 code-complete**
+  UI + GPS + composition root** wiring it end-to-end, plus the **handset↔tenant enrolment
+  flow** (`app/enrol` `EnrolmentCoordinator` + `EnrolScreen`, Keystore-persisted `baseUrl`;
+  ledger `C-RYH7` Increment 1) gating the scan screen. MVE acceptance: **A1–A5 code-complete**
   (real creds/backend HIL), **A6/A7 HIL** (+ runnable `scripts/e2e/a7-map-check.py`), **A8
-  gate green**. Next: real-device **HIL** + the enrol/bind UX (ledger `C-RYH7`); then the
-  Phase-1+ roadmap. See [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md).
+  gate green**. Next: enrolment **QR scanner** (Increment 1b) + the **vehicle VIN-bind**
+  (Increment 2, backend-gated) + real-device **HIL** (ledger `C-RYH7`); then the Phase-1+
+  roadmap. See [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md) and
+  [`docs/design/enrolment-flow.md`](design/enrolment-flow.md).
 - **Backend contract** — consumed as-is from TagPulse `openapi.json`; **zero backend change**
   needed for the Phase-0 MVE (backend asks `I-75YC`/`I-9HQA`/`I-K6D1` are post-MVE).
 

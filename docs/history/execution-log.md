@@ -631,3 +631,27 @@ Post-M5 ledger follow-ups, worked through the SDLC on `fix/relay-429-408-retryab
   blocking; 1 Medium signingConfig fix applied). Attestations in `docs/design/obdii-mve-plan.md`.
 - **Remaining (CI/HIL).** `:app:connectedReleaseAndroidTest` on an emulator (Jackson-post-R8
   runtime) — not runnable here (no emulator/KVM). `current-state`: not-affected.
+
+## 2026-07-25 — C-RYH7 Increment 1: handset↔tenant enrolment
+
+Followed the full SDLC (explore → plan → rubber-duck → implement → rubber-duck → verify).
+Design: `docs/design/enrolment-flow.md`. Decisions OQ1–OQ3 logged to the ledger.
+
+- **Scope:** Increment 1 = handset↔tenant enrolment (the unblocked, prerequisite half).
+  Increment 2 (vehicle VIN-bind: OBD-II Mode 09 + VIN barcode + plate label) is **staged**
+  and **backend-gated** on the `binding_value = VIN` + plate-label convention (ledger issue
+  logged). Increment 1b = the ML Kit/CameraX QR scanner impl behind the shipped seam.
+- **Change:** `EnrolmentCoordinator` + `EnrolState` + `EnrolmentInput` (`app/enrol`);
+  `EnrolScreen` Compose form + reactive `MainActivity.AppRoot` gating; `KeystoreCredentialStore`
+  gains a persisted, mutable `baseUrl` (`store(deviceId, apiKey, baseUrl)`, atomic);
+  `InMemoryCredentialStore` (ephemeral provisioning client); `ProvisioningScanner` seam;
+  `AppContainer` wires `enrolmentCoordinator` (provision via ephemeral client → atomic persist)
+  + `isEnrolled`, dropping `DEFAULT_BASE_URL` to a fallback.
+- **Gates:** plan-stage rubber-duck → 4 blocking (non-atomic tuple, non-reactive gating,
+  missing https validation, secret-leaking toString) → all fixed. Diff-stage code-review →
+  no blocking (1 test nit removed). Attestations in `docs/design/enrolment-flow.md`.
+- **Verified:** `./gradlew :app:testDebugUnitTest :gateway-core:testDebugUnitTest
+  :app:lintDebug assembleDebug` → BUILD SUCCESSFUL; **app 20** (+11 enrolment) + **gateway-core
+  51**, `failures=0 errors=0`; lint clean; debug APK built. **HIL (not here):** real Keystore,
+  live provision→approve, end-to-end enrol→scan→Map via `scripts/e2e/a7-map-check.py`.
+- **current-state:** reconciled (enrolment moves the snapshot; vehicle-bind placeholder remains).
