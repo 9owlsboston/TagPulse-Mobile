@@ -12,6 +12,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 /**
  * The default [BackendClient]: a **thin OkHttp transport over the generated
@@ -108,6 +110,39 @@ class OkHttpBackendClient(
         }
     }
 
+    override suspend fun resolveAssetByBinding(value: String): AssetLookupResult {
+        val key = credentials.apiKey
+        if (key.isNullOrBlank()) {
+            return AssetLookupResult.CredentialError("no ingest API key present")
+        }
+        val encoded = URLEncoder.encode(value, StandardCharsets.UTF_8.name())
+        val request = Request.Builder()
+            .url(url("assets/by-binding?value=$encoded"))
+            .header("Authorization", "Bearer $key")
+            .get()
+            .build()
+
+        return withContext(Dispatchers.IO) {
+            try {
+                client.newCall(request).execute().use { resp ->
+                    val payload = resp.body?.string().orEmpty()
+                    when {
+                        resp.isSuccessful -> parseAssetLookupBody(resp.code, payload)
+                        resp.code == 404 -> AssetLookupResult.NotFound
+                        resp.code == 401 || resp.code == 403 ->
+                            AssetLookupResult.CredentialError("lookup rejected the API key (${resp.code})")
+                        resp.code == 408 || resp.code == 429 || resp.code in 500..599 ->
+                            AssetLookupResult.Retryable("server error ${resp.code}")
+                        else ->
+                            AssetLookupResult.Terminal(resp.code, "rejected (${resp.code})")
+                    }
+                }
+            } catch (e: IOException) {
+                AssetLookupResult.Retryable("network error: ${e.javaClass.simpleName}")
+            }
+        }
+    }
+
     /**
      * The `Retry-After` directive on a `429`, in millis — **delta-seconds form only**
      * (e.g. `Retry-After: 30` → `30_000`). The HTTP-date form is not honored (returns
@@ -149,6 +184,22 @@ class OkHttpBackendClient(
             }
         } catch (e: Exception) {
             ProvisionResult.Failed(null, "unparseable provision body: ${e.javaClass.simpleName}")
+        }
+
+    private fun parseAssetLookupBody(code: Int, payload: String): AssetLookupResult =
+        try {
+            val parsed: Map<String, Any?> = mapper.readValue(payload, ANY_MAP)
+            val assetId = parsed["id"] as? String
+            if (assetId.isNullOrBlank()) {
+                AssetLookupResult.Terminal(code, "lookup response missing asset id")
+            } else {
+                AssetLookupResult.Resolved(
+                    assetId = assetId,
+                    displayLabel = (parsed["display_label"] as? String)?.takeIf { it.isNotBlank() },
+                )
+            }
+        } catch (e: Exception) {
+            AssetLookupResult.Terminal(code, "unparseable lookup body: ${e.javaClass.simpleName}")
         }
 
     private fun url(path: String): String =

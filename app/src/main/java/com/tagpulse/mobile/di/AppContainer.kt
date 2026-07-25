@@ -14,6 +14,8 @@ import com.tagpulse.gateway.core.relay.OkHttpBackendClient
 import com.tagpulse.gateway.core.relay.isEnrolled
 import com.tagpulse.gateway.obdii.ObdiiConfig
 import com.tagpulse.gateway.obdii.ObdiiDriver
+import com.tagpulse.mobile.bind.VehicleBindingCoordinator
+import com.tagpulse.mobile.bind.VehicleBindingStore
 import com.tagpulse.mobile.enrol.EnrolmentCoordinator
 import com.tagpulse.mobile.location.AndroidLocationProvider
 import com.tagpulse.mobile.scan.Relay
@@ -62,19 +64,32 @@ class AppContainer(context: Context) {
         persist = { deviceId, apiKey, baseUrl -> credentials.store(deviceId, apiKey, baseUrl) },
     )
 
-    /** Durable outbox over the file-backed Room DB (A4 restart-safe). */
-    val outbox: Outbox = Outbox(OutboxDatabaseFactory.open(appContext).outboxDao())
+    /** The current handset↔vehicle binding (canonical VIN + plate + asset id). */
+    val vehicleBinding: VehicleBindingStore = VehicleBindingStore(appContext)
+
+    /** True once a vehicle is bound (a VIN has been resolved + confirmed). */
+    val isBound: Boolean get() = vehicleBinding.current != null
 
     private val backendClient = OkHttpBackendClient(credentials)
+
+    /**
+     * Drives the vehicle VIN-bind (ledger `C-RYH7` Increment 2a): resolve a keyed VIN via
+     * `GET /assets/by-binding` (tenant `tp_` key), confirm the returned plate, persist.
+     */
+    val vehicleBindingCoordinator: VehicleBindingCoordinator = VehicleBindingCoordinator(
+        resolve = { vin -> backendClient.resolveAssetByBinding(vin) },
+        persist = { binding -> vehicleBinding.store(binding) },
+    )
+
+    /** Durable outbox over the file-backed Room DB (A4 restart-safe). */
+    val outbox: Outbox = Outbox(OutboxDatabaseFactory.open(appContext).outboxDao())
 
     private val drainer = Drainer(outbox = outbox, client = backendClient, credentials = credentials)
 
     /**
-     * The OBD-II driver bound to one vehicle (plan §5 — dongle↔vehicle is a local,
-     * operator-confirmed mapping). [ObdiiConfig.subject]'s id is the vehicle's
-     * `binding_kind='device'` binding value (relayed as `tag_id`, plan §4). This is a
-     * placeholder until the bind flow captures the real vehicle; wired here so the
-     * end-to-end path compiles + runs on the handset.
+     * The OBD-II driver. Its [ObdiiConfig.subject] is a **fallback placeholder** only —
+     * the reads' `tag_id` is overridden at scan time with the bound vehicle's canonical VIN
+     * (see [scanCoordinator]'s `boundSubject`), so the driver need not be rebuilt on re-bind.
      */
     private val driver: ObdiiDriver = ObdiiDriver.forAndroid(
         context = appContext,
@@ -94,6 +109,10 @@ class AppContainer(context: Context) {
         outbox = outbox,
         relay = Relay { drainer.drain() },
         connectionState = driver.connectionState,
+        // Stamp the bound vehicle's canonical VIN as the reads' subject/tag_id (C-RYH7 §6).
+        boundSubject = {
+            vehicleBinding.current?.let { Subject(SubjectKind.VEHICLE, id = it.vin) }
+        },
     )
 
     companion object {

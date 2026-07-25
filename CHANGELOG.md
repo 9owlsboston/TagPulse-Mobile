@@ -27,9 +27,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gate — this repo has no emulator). Debug builds don't run R8 and are unaffected.
 
 ### Added
-- **Handset↔tenant enrolment flow** (ledger `C-RYH7`, Increment 1) — the app can now be
-  enrolled against a live tenant instead of relying on the `AppContainer` `baseUrl`
-  placeholder. Implements plan §5 "Handset enrolment":
+- **Vehicle VIN-bind flow** (ledger `C-RYH7`, Increment 2a) — after enrolment the handset
+  is now **bound to one vehicle by VIN**, so its reads Map-link to the right asset (replaces
+  the `AppContainer` vehicle placeholder). Consumes backend `I-P923` (TagPulse SHA `71ed1e6`):
+  - **`Vin`** (pure) — canonicalizes (`trim().uppercase()`) and hard-validates (17 chars + the
+    ISO-3779 alphabet, no `I`/`O`/`Q`); the check digit is an **advisory** only (not enforced —
+    it's mandatory only in North America).
+  - **`BackendClient.resolveAssetByBinding`** — `GET /assets/by-binding?value=<VIN>` with the
+    tenant `tp_` key → `AssetLookupResult` (`Resolved{assetId, plate}` / `NotFound` /
+    `CredentialError` / `Retryable` / `Terminal`).
+  - **`VehicleBindingCoordinator`** + `BindState` + `VehicleBindingStore` (app) — resolve a
+    keyed VIN, **require a non-blank plate** (`display_label`) as the operator's confirmation
+    signal, confirm, and persist the binding; `BindScreen` (Compose) renders it and
+    `MainActivity.AppRoot` gates enrol → **bind** → scan.
+  - **`ScanCoordinator`** now stamps the bound vehicle's canonical VIN as the reads' `tag_id`
+    (captured once per scan; a scan with **no bound vehicle fails** and enqueues nothing — no
+    placeholder fallback).
+  - +16 unit tests (`Vin`, `VehicleBindingCoordinator`, resolve transport, scan subject-override).
+    **HIL:** the live resolve + end-to-end enrol→bind→scan→Map. **Note:** a successful bind
+    confirms the vehicle *identity* (plate); the Map link additionally requires an admin-set
+    `binding_kind='device'` binding = VIN (verified in HIL). **Increment 2b** (OBD-II Mode 09
+    auto-read) + **2c** (VIN barcode) are staged.
+
   - **`EnrolmentCoordinator`** (`app`, mirrors `ScanCoordinator`) exposes an `EnrolState`
     `StateFlow` (`Idle → Provisioning → Enrolled | Error`). One `enrol(input)`: validate
     (non-blank fields + a well-formed **`https://`** `baseUrl`) → `POST /devices/provision`

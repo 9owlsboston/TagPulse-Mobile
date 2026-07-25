@@ -681,3 +681,33 @@ Full SDLC. The INC1 `EnrolScreen` QR affordance is now live.
   R8 release APK **2.3M → 24M** (bundled barcode model is a non-shrinkable asset); debug APK 36M.
 - **HIL (not here):** real camera decode on a device; the emitted QR needs backend/admin tooling
   (app only parses). **current-state:** reconciled (QR scanner now shipped; footprint noted).
+
+## 2026-07-25 — C-RYH7 Increment 2a: vehicle VIN-bind
+
+Full SDLC. Backend I-P923 shipped (TagPulse migration 062 / SHA 71ed1e6): `binding_kind='vin'`
+(pure lookup handle) + `assets.display_label` (plate) + `GET /assets/by-binding`.
+
+- **Contract grounding:** read `~/ws/TagPulse` — the Map link (current-locations view) still
+  resolves `binding_kind='device' AND tr.tag_id = b.binding_value`; `'vin'` is matched by NO
+  telemetry SQL. So the handset reports `tag_id = canonical VIN` and Map-links via an admin-set
+  `device` binding = VIN; `by-binding` (kind-agnostic) resolves the asset + plate for confirmation.
+- **Change:** `Vin` (pure validator/canonicalizer; check digit advisory); core
+  `BackendClient.resolveAssetByBinding` + `AssetLookupResult` (thin GET, `Bearer` tp_ key);
+  app `VehicleBindingStore` (plain prefs) + `BindState` + `VehicleBindingCoordinator`
+  (resolve→require-plate→confirm→persist) + `BindScreen`; `MainActivity` gate enrol→bind→scan;
+  `ScanCoordinator` stamps the bound VIN as `tag_id` (captured once; fails if unbound, no
+  placeholder fallback). `AppContainer` wires it; `DEFAULT_VEHICLE_BINDING_VALUE` is a fallback.
+- **False alarm (recorded):** a suspected `postTagReadsBatch` auth bug (`Authorization: ******`)
+  was a **tool output-masking artifact** — the real literal is `Bearer $key` (verified via
+  char-length/ord). No code change; ledger I-34VA closed, memory stored.
+- **Gates:** plan-stage rubber-duck (4 blocking + 1 contract fix: Map-link-honesty, advisory
+  check digit, capture-once/fail-if-unbound, plate-required, 403→credential) → all folded in.
+  Diff-stage code-review → no blocking (URL-encoding, init order, Mutex release, VIN, security,
+  Map-link honesty all verified). Attestations in `docs/design/vehicle-bind-flow.md`.
+- **Commands:** `./gradlew :app:testDebugUnitTest :gateway-core:testDebugUnitTest :app:lintDebug
+  assembleDebug` → green: **app 47** (+16), **gateway-core 58** (+7), `failures=0 errors=0`;
+  lint clean; debug APK built.
+- **HIL:** live `by-binding` resolve + enrol→bind→scan→Map (a7-map-check, to extend for the VIN
+  binding). Follow-ups logged: backend return matched `binding_kind` from `by-binding`; re-vendor
+  `openapi.json` to `71ed1e6`. **Increment 2b** (Mode 09) + **2c** (VIN barcode) staged.
+  **current-state:** reconciled.

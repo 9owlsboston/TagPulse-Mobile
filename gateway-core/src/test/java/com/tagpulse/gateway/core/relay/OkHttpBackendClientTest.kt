@@ -203,4 +203,62 @@ class OkHttpBackendClientTest {
         assertTrue(result is ProvisionResult.Failed)
         assertEquals(401, (result as ProvisionResult.Failed).statusCode)
     }
+
+    @Test
+    fun `resolveAssetByBinding 200 parses asset id and plate, sends bearer + encoded value`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"id":"asset-9","display_label":"MASS-1234","name":"Van 9"}"""),
+        )
+
+        val result = client.resolveAssetByBinding("1HGCM82633A004352")
+
+        assertEquals(AssetLookupResult.Resolved(assetId = "asset-9", displayLabel = "MASS-1234"), result)
+        val recorded = server.takeRequest()
+        assertEquals("GET", recorded.method)
+        assertEquals("/assets/by-binding?value=1HGCM82633A004352", recorded.path)
+        assertEquals("Bearer tp_acme_SECRET", recorded.getHeader("Authorization"))
+    }
+
+    @Test
+    fun `resolveAssetByBinding url-encodes the value`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"id":"a","display_label":"P"}"""))
+        client.resolveAssetByBinding("A B/C")
+        assertEquals("/assets/by-binding?value=A+B%2FC", server.takeRequest().path)
+    }
+
+    @Test
+    fun `resolveAssetByBinding 200 with blank plate yields null displayLabel`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"id":"a","display_label":""}"""))
+        val result = client.resolveAssetByBinding("v")
+        assertEquals(AssetLookupResult.Resolved(assetId = "a", displayLabel = null), result)
+    }
+
+    @Test
+    fun `resolveAssetByBinding 404 maps to NotFound`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("not found"))
+        assertEquals(AssetLookupResult.NotFound, client.resolveAssetByBinding("v"))
+    }
+
+    @Test
+    fun `resolveAssetByBinding 401 and 403 map to CredentialError`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(401))
+        assertTrue(client.resolveAssetByBinding("v") is AssetLookupResult.CredentialError)
+        server.enqueue(MockResponse().setResponseCode(403))
+        assertTrue(client.resolveAssetByBinding("v") is AssetLookupResult.CredentialError)
+    }
+
+    @Test
+    fun `resolveAssetByBinding 5xx maps to Retryable`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(503))
+        assertTrue(client.resolveAssetByBinding("v") is AssetLookupResult.Retryable)
+    }
+
+    @Test
+    fun `resolveAssetByBinding missing api key short-circuits to CredentialError without a request`() = runBlocking {
+        credentials.apiKey = null
+        val result = client.resolveAssetByBinding("v")
+        assertTrue(result is AssetLookupResult.CredentialError)
+        assertEquals(0, server.requestCount)
+    }
 }

@@ -122,3 +122,16 @@ M4 (`:gateway-core` `relay` package) needs a real northbound HTTP client for
   `FakeCredentialStore`.
 - Jackson (already present since M3) serializes the generated models — no new
   serialization dep.
+
+### Increment 2a — VIN→asset lookup (`GET /assets/by-binding`)
+
+The vehicle VIN-bind (ledger `C-RYH7` Increment 2a) adds a **third** thin-transport
+call: `GET /assets/by-binding?value=<canonical VIN>` with `Authorization: Bearer <tp_ key>`,
+mapping the result to a typed `AssetLookupResult` (`docs/design/vehicle-bind-flow.md`). This
+consumes backend endpoint + field added by **`I-P923`** (TagPulse migration `062`, backend
+SHA **`71ed1e6`** — the new `assets.display_label` (plate) + `binding_kind='vin'`). Consistent
+with the M4 transport decision, the response is parsed minimally (`{id, display_label}`) rather
+than via the generated `AssetResponse`; **re-vendoring `openapi.json` to `71ed1e6`** to pick up
+the generated `AssetResponse.display_label` + the endpoint is the proper follow-up (not blocking
+2a). The provenance SHA above (`06dde2b…`) still reflects the **generated models** in use.
+
