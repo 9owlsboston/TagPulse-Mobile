@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ksp)
     alias(libs.plugins.openapi.generator)
 }
 
@@ -73,6 +74,12 @@ android {
         jvmTarget = "17"
     }
 
+    // Robolectric drives the Room outbox tests on the JVM (no emulator here):
+    // it needs Android resources on the unit-test classpath.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     sourceSets {
         getByName("main") {
             java.srcDir(generatedDir.map { it.dir("src/main/kotlin") })
@@ -90,10 +97,25 @@ tasks.matching { it.name.startsWith("lint") }.configureEach {
 }
 
 dependencies {
-    // jackson-annotations (annotations only) compiles the generated models; the
-    // serialization runtime (databind) is deferred to the M4 HTTP client.
+    // jackson-annotations (annotations only) compiles the generated models. The
+    // Jackson serialization RUNTIME (databind + kotlin module) is pulled in EARLY
+    // (ahead of the M4 HTTP client) because the M3 outbox genuinely needs JSON:
+    // it serializes Observation.payload / location to the row's *_json columns and
+    // reconstructs them on read. See contract/CONTRACT.md.
     api(libs.jackson.annotations)
+    implementation(libs.jackson.databind)
+    implementation(libs.jackson.module.kotlin)
     api(libs.kotlinx.coroutines.core)
 
+    // Durable outbox store (plan §7): Room over SQLite, compiler via KSP.
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+
     testImplementation(libs.junit)
+    // Room runs on the JVM under Robolectric — the faithful analogue of the A4
+    // instrumented "enqueue → kill → relaunch → still pending" restart test.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

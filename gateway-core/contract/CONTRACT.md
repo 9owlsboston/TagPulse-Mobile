@@ -52,11 +52,21 @@ only**.
 
 Serialization: generated models carry **Jackson annotations** (kotlinx.serialization
 was tried first but its compiler plugin ICEs on the generated `Map<String, Any>`
-fields — see the execution-log). The only added dependency at **M0** is
+fields — see the execution-log). At **M0** the only added dependency was
 `jackson-annotations` (annotations only, no runtime). The Jackson **runtime**
 (`jackson-databind` + `jackson-module-kotlin` — the kotlin module is required for
-Jackson to (de)serialize Kotlin data classes) is added at **M4**, when the HTTP
-client is wired.
+Jackson to (de)serialize Kotlin data classes) was originally deferred to M4 (the
+HTTP client), but landed **early at M3**: the durable outbox (plan §7) genuinely
+needs JSON at rest — it serializes `Observation.payload` / `location` to its
+`payload_json` / `location_json` columns and reconstructs them on read. The
+generated HTTP-client wiring (endpoint bindings, auth) is still **M4**; M3 only
+consumes the same Jackson runtime for the outbox codec (`OutboxJson`).
+
+> **Footprint note (M3).** `jackson-databind` + `jackson-module-kotlin` (~2 MB of
+> classes pre-shrink) were pulled forward one milestone. This is not extra
+> footprint versus the plan — M4 needs them regardless — only earlier, and it
+> avoids a leaner-but-throwaway serializer for the outbox. R8 shrink applies the
+> same as for the generated models (ledger `C-ZVMF`).
 
 > **Footprint — `unverified` / aspirational.** All 145 component schemas are
 > generated but only three (`TagReadCreate`/`Location`/`Identity`) are used by the

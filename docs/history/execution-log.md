@@ -320,3 +320,66 @@ testDebugUnitTest assembleDebug` → `BUILD SUCCESSFUL`; unit tests all `failure
 (obdii **42** — PidCodec 21, Elm327Session 12, ObdiiDriver 4, ObdSnapshot 5; gateway-core 2;
 app 1 = **45 total**); lint clean; `app-debug.apk` built. `docs-drift` clean. Diff-stage
 rubber-duck: pending (verifier next).
+
+### 2026-07-24 — OBDII MVE M3: normalize → durable Room outbox (restart-safe)
+
+Implemented milestone M3 of `docs/design/obdii-mve-plan.md` (§8 M3 row, §7 offline-first
+outbox) on branch `feat/m3-outbox`: an `Observation` now persists to a durable **Room**
+outbox in `:gateway-core` (the first real core implementation beyond the M0
+interfaces/generated client) that is **restart-safe** but **does not yet send**. Scope held
+to M3 — no drainer/batcher, no HTTP / `POST /tag-reads/batch`, no retry/backoff execution
+(M4), no credential/enrolment/Keystore (M4), no GPS capture, no app UI; nothing ever flips a
+row off `PENDING`.
+
+- **Room persistence (`:gateway-core`, new `outbox` package).** `OutboxItem` `@Entity`
+  mirrors plan §7 with the composite subject/source flattened into primitive columns (so
+  **no** Room type converters): `subject_kind/subject_id`, `source_modality/
+  source_gateway_device_id`, `captured_at`, `payload_json`, `location_json`, `state`,
+  `attempts`, `created_at`; timestamps are epoch-ms UTC (monotone-orderable, locale-free).
+  The explicit subject+source is the design's "cheap hedge" (§3/§7). `OutboxDao` (suspend +
+  `Flow`): `insert`, `byState`/`observeByState` (oldest-first `created_at ASC, id ASC`),
+  `count`/`observeCount`, `countByState`, `updateStateAndAttempts` (M4-only), `deleteById`,
+  `deleteCapturedBefore` (age cap, keyed on **capture** time = the backend's reject clock),
+  `deleteOldest` (size-cap eviction). `OutboxDatabase` (`@Database version=1`) +
+  `OutboxDatabaseFactory.open(name)/openAt(file)` open a **file-backed** DB (the A4
+  guarantee). Room compiler runs via **KSP** (new `com.google.devtools.ksp` plugin +
+  catalog entries; Room `2.6.1`).
+- **`Outbox` API.** `enqueue(observation)` write-through: builds a `PENDING`, `attempts=0`
+  row (via pure `OutboxMapper.toItem`), inserts, enforces the size cap, and returns the row
+  id immediately — no send. `pending()`/`observePending()`, `count()`/`observeCount()`,
+  `countInState()`, and `purgeExpired(now)` (age cap). `OutboxState {PENDING, SENT, FAILED}`
+  spans the full lifecycle but **M3 only ever emits `PENDING`** — SENT/FAILED + the drainer
+  are M4.
+- **Serialization (`OutboxJson`, Jackson).** `payload: Map<String, Any?>` and `GeoLocation`
+  serialize to the `*_json` columns and reconstruct on read. Chose Jackson to stay consistent
+  with the repo direction (the generated client already carries Jackson annotations;
+  `CONTRACT.md` names it the stack) — pulled the Jackson **runtime**
+  (`jackson-databind` + `jackson-module-kotlin`) forward from M4 to M3 because the outbox
+  genuinely needs JSON at rest (not extra footprint vs the plan, just one milestone earlier;
+  `CONTRACT.md` updated + footprint noted). Numeric round-trip contract documented: JSON has
+  one number type, so decimals reconstruct as `Double` (a `Float` `49.8f` → `Double` `49.8`)
+  — value + dot-decimal formatting preserved, only the `Number` subtype may widen. Round-trip
+  proven by test (nested `pids` map with `49.8` + a null-omitted PID + a `GeoLocation` →
+  payload/subject/source/location reconstruct equal; JSON contains `49.8`, never `49,8`).
+- **Footprint caps (§7).** `OutboxConfig(maxItems, maxAge)` — size cap evicts oldest rows on
+  enqueue (documented + logged **bounded data-loss protection**: dropping unsent rows beats an
+  unbounded queue) and `purgeExpired` age-drops stale items (default `maxAge = 24 h` to match
+  the backend clock; drain-time "drop stale before send" is wired but M4). Defaults
+  (`maxItems = 10_000`, 24 h) marked `unverified` pending Phase-0 field data.
+- **Tests — JVM gate via Robolectric** (Room runs on the JVM; added `robolectric` +
+  `androidx.test:core` as `testImplementation`, `unitTests.isIncludeAndroidResources = true`,
+  `src/test/resources/robolectric.properties` `sdk=34`). **A4 restart-safety**
+  (`OutboxRestartTest`): open a file-backed DB in a `TemporaryFolder` → `enqueue` → **close
+  the DB** (process-death analogue) → **reopen a new instance on the same file** → item still
+  present + `PENDING`. Plus serialization round-trip (4), size/age caps (3), and state/query
+  (3). No `androidTest` scaffold added (kept lean; the Robolectric A4 is the faithful JVM
+  analogue and the real-device HIL mirrors M1's).
+
+Verified — gate GREEN: `ANDROID_HOME=/home/velen/android-sdk ./gradlew lintDebug
+testDebugUnitTest assembleDebug` → `BUILD SUCCESSFUL`; unit tests all `failures=0 errors=0`
+(gateway-core **13** — outbox: Restart 1, Serialization 4, Caps 3, State 3 = **11 new**
+Robolectric tests + Observation 1 + GeneratedContract 1; obdii 42; app 1 = **56 total**);
+the 11 new outbox tests confirmed present in
+`gateway-core/build/test-results/testDebugUnitTest/` (ran under `testDebugUnitTest`); lint
+clean; `app-debug.apk` built. `docs-drift` clean. `CHANGELOG` + `CONTRACT.md` updated.
+Diff-stage rubber-duck: pending (verifier next).
