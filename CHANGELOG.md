@@ -8,6 +8,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **M5 (Map confirmation / end-to-end)** of the OBD-II MVE — the final Phase-0
+  milestone — wiring the "Scan vehicle" UI + GPS on top of the M0–M4 pipeline and
+  proving the slice end-to-end. In `:app`:
+  - **Jetpack Compose "Scan vehicle" screen** (`ui/ScanScreen.kt`) — a single-screen
+    flow: a **Scan vehicle** button + a status/result area rendering the pipeline
+    state (idle → connecting → handshaking → reading → relaying → done/error), the
+    decoded PID snapshot, whether a GPS fix was attached, and the relay outcome.
+    Compose is added via the BOM + `activity-compose` + `material3` (Kotlin 2.0
+    Compose-compiler Gradle plugin).
+  - **`ScanCoordinator`** (`scan/ScanCoordinator.kt`) composes the end-to-end flow and
+    exposes a sealed `ScanState` `StateFlow`: on scan → `GatewayDriver.discover()` →
+    `read()` → `normalize()` → **attach the GPS fix to `Observation.location`** →
+    `Outbox.enqueue()` → `Drainer.drain()` (via a `Relay` seam) → reflect the
+    `DrainReport` in the UI. Modality-agnostic (depends only on the core seam + app
+    abstractions), so it is fully unit-testable with fakes. It **surfaces
+    `DrainReport.credentialError`** as a `CREDENTIAL` error telling the operator to
+    re-enrol / check the key — **closing ledger `C-5EHY`** (the read stays `PENDING`
+    for a re-drain once the credential is fixed).
+  - **`LocationProvider`** (`location/`) — an interface returning a single `GeoLocation`
+    fix, with an Android **`LocationManager`** impl (HIL; no Google Play Services, per
+    the footprint budget) + an in-memory `FixedLocationProvider` for tests. The
+    coordinator maps the fix → `Observation.location`, which the M4 mapper renders to
+    `Location(accuracyM, source="gps")`.
+  - **Composition root** (`di/AppContainer.kt`) — manual DI (no Hilt): constructs the
+    real `ObdiiDriver.forAndroid` + `KeystoreCredentialStore` + `OkHttpBackendClient` +
+    Room `Outbox` + `Drainer` + `AndroidLocationProvider` and hands them to the
+    coordinator.
+  - **Runtime permissions** — `MainActivity` requests `ACCESS_FINE_LOCATION` +
+    (API 31+) `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` at the point of use; `:app` now
+    declares `ACCESS_FINE_LOCATION` (GPS is actually used, unlike M4).
+  - **A7 end-to-end fixture (HIL, runnable)** — `scripts/e2e/a7-map-check.py`
+    (stdlib-only) seeds a vehicle asset + a **`binding_kind='device'`** binding
+    (`binding_value` = the reported `tag_id`; plan §5 Fix 3), relays a
+    `POST /tag-reads/batch` exactly as the app does (`sensor_data` + `location`), and
+    asserts `GET /assets/current-locations` returns the vehicle at the read's location.
+    Endpoints/fields validated against `~/ws/TagPulse` @ `06dde2b`; **not run here**
+    (no Docker in this distro) — see `scripts/e2e/README.md` for run steps.
+  - Tests (gate; no device, no Docker): `ScanCoordinatorTest` (Robolectric, real
+    Room-backed `Outbox` + fakes for driver/GPS/relay) covers the happy path (scan →
+    snapshot → GPS attached to `Observation.location` → enqueue → drain → `SENT`, UI
+    ends **Done** with the PID values), the credential-error surface (`C-5EHY`),
+    driver/no-dongle failures, a relay-failed surface, the null-fix (still relays)
+    path, and the live driver-link state mirror.
+  - **MVE acceptance after M5:** A1–A5 code-complete (real creds/backend are HIL),
+    A6/A7 delivered as HIL + the runnable A7 E2E script, **A8 gate green**.
+  Gate green (`./gradlew lintDebug testDebugUnitTest assembleDebug`).
+
 - **M4 (Enrolment + relay)** of the OBD-II MVE, in `:gateway-core` (new `relay`
   package): the durable outbox now **drains** — `PENDING` `Observation`s are mapped
   to the **generated** `TagReadCreate` and relayed as a batched

@@ -1,15 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  M0 scaffold manifest. No components/behavior are wired yet — the app only
-  declares itself. BLE / location permissions land with M1+ (the obdii driver),
-  not in M0.
+  M5 app manifest. Declares the single "Scan vehicle" Activity (the end-to-end
+  entry point) and ACCESS_FINE_LOCATION — GPS is now actually used (the read's
+  location; plan §4/§6), unlike the M0–M4 scaffold. The BLE permissions are
+  declared by the :obdii library manifest and merged in here.
+
+  tools:remove strips the library's `maxSdkVersion="30"` cap on ACCESS_FINE_LOCATION:
+  M5 needs the fine-location fix on all supported API levels for the GPS stamp.
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- GPS fix for the read (plan §4). Needed on every API level now. -->
+    <uses-permission
+        android:name="android.permission.ACCESS_FINE_LOCATION"
+        tools:remove="android:maxSdkVersion" />
 
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.DayNight.NoActionBar" />
+        android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+        tools:ignore="MissingApplicationIcon"><!-- launcher icon = branding, out of MVE scope -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
 
 </manifest>

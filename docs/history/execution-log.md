@@ -483,3 +483,76 @@ the 11 new outbox tests confirmed present in
 `gateway-core/build/test-results/testDebugUnitTest/` (ran under `testDebugUnitTest`); lint
 clean; `app-debug.apk` built. `docs-drift` clean. `CHANGELOG` + `CONTRACT.md` updated.
 Diff-stage rubber-duck: pending (verifier next).
+
+### 2026-07-24 — OBDII MVE M5: Scan-vehicle UI + GPS + end-to-end (final Phase-0 milestone)
+
+Implemented milestone M5 of `docs/design/obdii-mve-plan.md` (§8 M5 row, §1 A6/A7/A8, §4
+mapping, §5 Fix 3 device-binding) on branch `feat/m5-e2e`: the "Scan vehicle" UI + GPS
+capture + the end-to-end coordinator are wired on top of the M0–M4 pipeline, and the
+asset-link (A7) is delivered as a runnable E2E fixture. Scope held to M5 — no Tracker/
+background mode, no iOS, no multi-vehicle fan-in, no DTC/VIN, no post-MVE backend asks; M1–M4
+internals untouched.
+
+- **`:app` composition + UI (Jetpack Compose).** Added Compose (BOM `2024.09.03` +
+  `activity-compose` + `material3`; Kotlin-2.0 `org.jetbrains.kotlin.plugin.compose` Gradle
+  plugin, replacing `kotlinCompilerExtensionVersion`). `ui/ScanScreen.kt` is a pure,
+  state-driven single screen: a **Scan vehicle** button + a status/result card rendering the
+  pipeline `ScanState` (idle → connecting → handshaking → reading → relaying → done/error), the
+  decoded PID snapshot, GPS-attached flag, and the relay summary (function over form; the
+  Compose screen is HIL for instrumented tests — the coordinator is the gate-covered part).
+- **`ScanCoordinator` (`scan/`).** Composes the slice and exposes a sealed `ScanState`
+  `StateFlow`: `driver.discover()` → `read()` → `normalize()` → **attach the one-shot GPS fix
+  to `Observation.location`** → `outbox.enqueue()` → `relay.drain()` → map the `DrainReport`
+  to `Done`/`Error`. It **surfaces `DrainReport.credentialError`** as an `ErrorKind.CREDENTIAL`
+  state with a "re-enrol / check the key" message — **closing ledger `C-5EHY`** (the read stays
+  `PENDING` for a re-drain once fixed). Modality-agnostic (depends on the core `GatewayDriver`
+  seam + app-level `LocationProvider`/`Relay` abstractions), re-entrancy-guarded (`Mutex`), and
+  mirrors the driver's live `ConnectionState` (Connecting→Handshaking→Reading) onto the UI
+  during the atomic `read()`. `Relay` is a thin `fun interface` (`suspend () -> DrainReport`)
+  so tests script a `DrainReport` without standing up the whole `Drainer`+client+creds stack
+  (those fakes live in `:gateway-core`'s test set).
+- **`LocationProvider` (`location/`).** Interface returning a single `GeoLocation?`;
+  `AndroidLocationProvider` over the platform **`LocationManager`** (deliberately not Fused —
+  no Google Play Services, footprint budget; API 30+ `getCurrentLocation`, else
+  `getLastKnownLocation`; HIL) + an in-memory `FixedLocationProvider` for tests.
+- **Composition root (`di/AppContainer.kt`).** Manual DI (no Hilt): constructs
+  `ObdiiDriver.forAndroid` + `KeystoreCredentialStore` + `OkHttpBackendClient` + Room `Outbox`
+  + `Drainer` + `AndroidLocationProvider` and hands them to the coordinator. `baseUrl` + the
+  vehicle `device`-binding value are setup inputs (QR/out-of-band, §5) — placeholders until
+  the enrol/bind flow captures them. (`:app` gained `room-runtime`/`okhttp`/`jackson-databind`
+  on its **compile** path — the composition root names supertypes of the public factories/
+  clients `:gateway-core` keeps as `implementation`; already in the merged APK, no footprint
+  change.)
+- **Permissions.** `MainActivity` requests `ACCESS_FINE_LOCATION` + (API 31+) `BLUETOOTH_SCAN`/
+  `BLUETOOTH_CONNECT` at the point of use (minimal flow, §6); `:app` manifest now declares
+  `ACCESS_FINE_LOCATION` (GPS is actually used now, unlike M4) and strips the `:obdii`
+  library's `maxSdkVersion=30` cap via `tools:remove`.
+- **A7 E2E fixture (HIL, runnable).** `scripts/e2e/a7-map-check.py` (stdlib-only) +
+  `scripts/e2e/README.md`. Against a running dev tenant (`--base-url` + tenant `--api-key`) it:
+  (a) resolves/creates an `object` category and a vehicle asset; (b) creates the
+  **`binding_kind='device'`** binding whose `binding_value` = the reported `tag_id` (§5 Fix 3);
+  (c) registers/provisions a `device_id`; (d) POSTs `/tag-reads/batch` exactly as the app does
+  (`sensor_data` PID snapshot + `location{…,source:"gps"}`), asserting `201 {ingested:1,
+  rejected:0}`; (e) asserts `GET /assets/current-locations` returns the asset at the read's
+  location (`kind=="geo"`, lat/lon within tol). Every endpoint/field validated against
+  `~/ws/TagPulse` @ `06dde2b` (`categories.py:82`, `assets.py:43/129/243`, `devices.py:27`,
+  `provisioning.py:35`, `ingestion.py:38`; auth: the tenant `tp_` key routes through
+  `get_current_user` → `get_current_tenant` for ingest AND the admin/editor asset/binding
+  writes). **Not run here** — Docker is unavailable in this WSL distro (TagPulse ships a
+  `docker-compose.yml` serving `:8000`, but it can't run here), so the real dongle/GPS/Keystore/
+  live-backend A6/A7 stay HIL; the script + README document the exact run steps.
+
+**MVE acceptance status after M5:** A1–A5 **code-complete** (the real Keystore creds + live
+backend are HIL); **A6/A7** delivered as HIL + the runnable A7 E2E script (validated, not run
+here); **A8 gate GREEN**.
+
+Verified — gate GREEN: `ANDROID_HOME=/home/velen/android-sdk ./gradlew lintDebug
+testDebugUnitTest assembleDebug` → `BUILD SUCCESSFUL`; unit tests `failures=0 errors=0`
+(app **8** = AppWiring 1 + ScanCoordinator **7** new [happy-path/GPS-attached, null-fix,
+credential-error C-5EHY, driver-fail, no-dongle, relay-fail, link-state-mirror]; gateway-core
+42; obdii 42 = **92 total**); the 7 ScanCoordinator tests confirmed present in
+`app/build/test-results/testDebugUnitTest/` (ran under `testDebugUnitTest`); lint clean (only
+the pre-existing `GradleDependency`/`AndroidGradlePluginVersion`/`DataExtractionRules` baseline
+warnings — the two new-from-M5 warnings `RedundantLabel`/`MissingApplicationIcon` were removed/
+suppressed); `app-debug.apk` built. `docs-drift` clean. `CHANGELOG` + execution-log updated
+(current-state left for close-out). Diff-stage rubber-duck: pending (verifier next).
