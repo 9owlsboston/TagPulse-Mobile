@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **M3 (Normalize → durable outbox)** of the OBD-II MVE, in `:gateway-core` (the
+  first real core implementation beyond the M0 interfaces/generated client): a
+  durable **Room** outbox that persists every `Observation` and survives a process
+  restart, but does **not** yet send. `OutboxItem` entity mirrors plan §7
+  (`{id, subject_kind/id, source_modality/gateway_device_id, captured_at,
+  payload_json, location_json, state, attempts, created_at}` — the explicit
+  subject+source is the design's "cheap hedge", never an implicit self);
+  `OutboxDao` (suspend + `Flow`) covers insert, pending-by-state (oldest-first),
+  count / count-by-state, state+attempts update, delete-by-id, age-purge
+  (`deleteCapturedBefore`) and oldest-eviction (`deleteOldest`); `OutboxDatabase`
+  + `OutboxDatabaseFactory` open a **file-backed** DB (restart-safe). The core-facing
+  `Outbox` API `enqueue()`s an `Observation` write-through as a `PENDING`,
+  `attempts = 0` row and returns its id immediately (no send), and exposes
+  `pending()`/`observePending()`, `count()`/`observeCount()`, `countInState()`, and
+  `purgeExpired(now)`. `OutboxState {PENDING, SENT, FAILED}` spans the full
+  lifecycle but **M3 only ever produces `PENDING`** — the SENT/FAILED transitions
+  and the drainer are M4. Payload (`Map<String, Any?>`) and `GeoLocation` serialize
+  to JSON via Jackson (`OutboxJson`) and round-trip on read (nested `pids` map +
+  fractional PID survive; decimals stay dot-formatted regardless of locale).
+  **Footprint caps (plan §7):** a configurable size cap evicts the oldest rows on
+  enqueue (bounded, logged data-loss protection against an unbounded queue) and a
+  configurable age cap (`purgeExpired`, default 24 h to match the backend clock)
+  drops stale items; both defaults are `unverified` pending Phase-0 field data. The
+  Jackson serialization **runtime** (`jackson-databind` + `jackson-module-kotlin`)
+  and Room (`room-runtime`/`room-ktx`, compiler via **KSP**) are added to
+  `:gateway-core`; Room outbox tests run on the JVM under **Robolectric** (added as
+  `testImplementation`) — including the A4 restart test (enqueue → close DB →
+  reopen same file → item still `PENDING`), the faithful JVM analogue of the
+  device-only instrumented test. Gate green
+  (`./gradlew lintDebug testDebugUnitTest assembleDebug`).
 - **M2 (Full snapshot + normalize)** of the OBD-II MVE: `PidCodec` now decodes all
   four MVE PIDs as pure functions — RPM (`010C`), speed (`010D`, `A` km/h), coolant
   temp (`0105`, `A−40` °C, may be negative) and fuel level (`012F`, `A*100/255` %,

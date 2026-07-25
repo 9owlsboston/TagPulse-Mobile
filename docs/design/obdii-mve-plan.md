@@ -430,6 +430,24 @@ the `PidCodec` + core contracts are the reusable, portable parts.
   (M1 `readRpm`/session/reconnect tests retained + green). Gate green (**45 unit tests**,
   `failures=0 errors=0`). Scope held to M2 (no outbox/HTTP/GPS/enrolment/UI); `gateway-core`
   untouched.
+- **Diff-stage rubber-duck (M3 implementation, `feat/m3-outbox` / PR #7):** **ran** on the
+  M3 code diff. `verifier` verdict **"M3 conforms"** (6/6 checklist, gate re-run green — 157
+  tasks; the 11 Robolectric outbox tests, incl. the A4 file-backed restart, demonstrably
+  executed under `testDebugUnitTest`); code-review **"no blocking issues."** **No round-2 —
+  zero code fixes.** Independently verified: the durable Room outbox is **file-backed** and
+  `enqueue()` awaits the `suspend` insert so the row is committed before it returns
+  (restart-safe); the `OutboxJson` round-trip is **locale-safe** and the documented
+  `Float→Double` widening is wire-lossless; `deleteOldest`/`byState` order by
+  `created_at ASC, id ASC` (never evicts the just-enqueued row) and age-purge keys on
+  `captured_at` (the backend 24 h clock). One **non-blocking** finding (all three reviewers):
+  `enforceSizeCap()`'s count-then-`deleteOldest` is **not atomic** → could over-evict ~2×
+  under *concurrent* enqueues — can't bite in M3 (single on-demand write path), deferred to
+  **M4** (fold into one `DELETE … WHERE id NOT IN (… LIMIT :maxItems)`), tracked as ledger
+  **`C-1TQZ`**. Design choices judged sound: jackson runtime pulled M4→M3 (earlier, not extra
+  footprint; `CONTRACT.md` updated, cross-refs `C-ZVMF`), converter-free flattened schema,
+  and undriven M4 DAO methods (`updateStateAndAttempts`/`deleteById`, no callers). Scope held
+  to M3 (no drainer/HTTP/retry-exec/credential/GPS/UI; only ever `PENDING`); no `app/`/`obdii/`
+  changes. Gate green (**56 unit tests**, `failures=0 errors=0`).
 - **Diff-stage rubber-duck (this plan doc, docs-only):** n/a — this plan/proposal change is
   **docs-only**. Per AGENTS §6 the docs carve-out applies (no deps/CI/IaC/security/behavioral
   config touched), **but** this plan **gates** the Phase-0 implementation, which is *not*
