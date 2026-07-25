@@ -599,3 +599,35 @@ Post-M5 ledger follow-ups, worked through the SDLC on `fix/relay-429-408-retryab
 - **Verified.** `./gradlew :gateway-core:lintDebug :gateway-core:testDebugUnitTest` →
   `BUILD SUCCESSFUL`, lint clean, **gateway-core 48 tests** (+6: 4 client status-map + 2 drainer
   honor/defer), `failures=0 errors=0`. `current-state`: not-affected (no snapshot bump).
+
+## 2026-07-25 — Follow-up chores C-5EHY (verify) + C-ZVMF (R8 footprint)
+
+- **C-5EHY — already done, resolved.** M5 (PR #9) surfaces `DrainReport.credentialError` as
+  `ScanState.Error(CREDENTIAL)` with a re-enrol/check-key message (ScanCoordinator.kt:173-175);
+  ledger chore was stale. No code change.
+- **C-5QNP — not this repo.** Scoped `repo:TagPulse` (backend; docker/* actions, PRs #164/165
+  there). TagPulse-Mobile has no `.github/workflows`. Left for the backend repo.
+- **C-ZVMF — R8 tree-shaking made load-bearing.** `:app` release had `isMinifyEnabled=false`, so
+  the ~145-schema generated OpenAPI model superset shipped un-shrunk. Enabled `isMinifyEnabled`
+  + `isShrinkResources`; keep-rules ship as `:gateway-core` consumer rules
+  (`consumer-rules.pro`): `-keepattributes` (annotations/Signature), `-keepclassmembers` (ctors/
+  fields/methods — NOT `-keep`, so unused model classes still strip) for `api.model.**` +
+  `GeoLocation`, `kotlin.Metadata` keep, `TypeReference`+subclass keep, `-dontwarn` reconciled
+  from R8 `missing_rules.txt` (java.beans/jackson.ext/w3c.dom + Tink errorprone). Added
+  `app/test-proguard-rules.pro` (errorprone `-dontwarn` for the minified test APK) and
+  `testBuildType="release"` + a debug-signed release so the instrumented `JacksonR8SmokeTest`
+  targets and can install on the minified variant.
+- **Commands run.** `./gradlew :app:assembleRelease` (green; iterated once on `missing_rules.txt`
+  for Tink errorprone). Inspected `app/build/outputs/mapping/release/usage.txt`: **145/148**
+  generated model files removed; `TagReadCreate`/`Identity`/`Location`/`GeoLocation` + members
+  kept (no member removals); `mapping.txt` confirms ctors/getters/component fns retained (classes
+  renamed — fine, Jackson uses retained `@JsonProperty`/`@Metadata`). Signed release APK ~2.3 MB.
+  `./gradlew :app:assembleReleaseAndroidTest` green. `./gradlew lintDebug testDebugUnitTest
+  assembleDebug` green (**app 10 + gateway-core 51 + obdii 42 = 103**, `failures=0 errors=0`).
+- **Tests added.** `JacksonR8ContractTest` (gateway-core JVM, +3 — locks the serialize/round-trip
+  contract, runs here) and `JacksonR8SmokeTest` (app instrumented — the R8 runtime gate; runs on
+  an emulator/CI via `:app:connectedReleaseAndroidTest`).
+- **Gates.** Plan-stage rubber-duck (5 blocking → all addressed). Diff-stage code-review (no
+  blocking; 1 Medium signingConfig fix applied). Attestations in `docs/design/obdii-mve-plan.md`.
+- **Remaining (CI/HIL).** `:app:connectedReleaseAndroidTest` on an emulator (Jackson-post-R8
+  runtime) — not runnable here (no emulator/KVM). `current-state`: not-affected.

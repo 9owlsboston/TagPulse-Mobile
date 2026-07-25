@@ -68,14 +68,18 @@ consumes the same Jackson runtime for the outbox codec (`OutboxJson`).
 > avoids a leaner-but-throwaway serializer for the outbox. R8 shrink applies the
 > same as for the generated models (ledger `C-ZVMF`).
 
-> **Footprint — `unverified` / aspirational.** All 145 component schemas are
-> generated but only three (`TagReadCreate`/`Location`/`Identity`) are used by the
-> MVE. The intended mitigation is R8 tree-shaking of the unused models — but this
-> is **not load-bearing today**: release `isMinifyEnabled = false`, so R8 does
-> **not** strip them yet. Making it real (enable R8 + keep-rules, or trim the
-> vendored spec) is tracked as ledger **`C-ZVMF`** and must land before any release
-> footprint acceptance. Enabling release minify is deliberately **out of M0 scope**
-> (avoids shipping an untested release path).
+> **Footprint — R8 tree-shaking is now load-bearing (`C-ZVMF`, verified).** All 145
+> component schemas are generated but only three (`TagReadCreate`/`Location`/`Identity`)
+> are used by the MVE. R8 now strips the unused superset: `:app` release enables
+> `isMinifyEnabled = true` (+ `isShrinkResources`), with reflective-Jackson keep-rules
+> shipped as `:gateway-core` **consumer rules** (`consumer-rules.pro`). Build-verified —
+> `:app:assembleRelease` R8 `usage.txt` shows **145/148 generated model files removed**
+> and the used models + `GeoLocation` (+ their members) retained; release APK ~2.3 MB.
+> `-keepclassmembers` (not `-keep`) is deliberate so unused model *classes* are still
+> shrunk. Runtime Jackson-post-R8 correctness is covered by `JacksonR8ContractTest`
+> (JVM, unminified contract) + `JacksonR8SmokeTest` (instrumented, `testBuildType =
+> "release"` → minified variant; the emulator/CI run is the remaining gate). Debug
+> builds don't run R8 and are unaffected.
 
 The HTTP client / API surface (endpoint bindings, auth) is deferred to later
 milestones (plan §8, M4).
