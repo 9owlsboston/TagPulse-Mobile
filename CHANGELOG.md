@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **M2 (Full snapshot + normalize)** of the OBD-II MVE: `PidCodec` now decodes all
+  four MVE PIDs as pure functions — RPM (`010C`), speed (`010D`, `A` km/h), coolant
+  temp (`0105`, `A−40` °C, may be negative) and fuel level (`012F`, `A*100/255` %,
+  one-decimal float) — via a shared frame parser; each returns a typed
+  `PidReading<T>` value or a clean `Failure` (never throws) on
+  `NO DATA`/`?`/`UNABLE TO CONNECT`/malformed/wrong-header, spaces-on and spaces-off
+  framing alike. `Elm327Session.readSnapshot()` requests the four PIDs in sequence,
+  reassembles each to the `>` prompt, and assembles an `ObdSnapshot` — **per-PID
+  failure is graceful** (that field goes null; the other PIDs still land; the
+  session settles back on `Ready`). New `ObdSnapshot` model renders the plan §4
+  `sensor_data` shape (`modality`/`protocol`/`captured_at`/`pids`/optional
+  `dongle`/debug-gated `raw`) and round-trips across the string-typed seam.
+  `ObdiiDriver.read()` now produces a `DriverReading` carrying the snapshot and
+  `normalize()` maps it to an `Observation` — `subject`/`source` from an injected
+  `ObdiiConfig`, `timestamp` = capture time, `location` stays null (GPS is M4/M5).
+  Gate green (`./gradlew lintDebug testDebugUnitTest assembleDebug`).
 - **M1 (BLE connect + one PID)** of the OBD-II MVE: a testable `BleTransport` seam
   (interface + real `AndroidBleTransport` over `android.bluetooth` [HIL-only] +
   scriptable in-memory `FakeBleTransport` for tests); an `Elm327Session` that runs
