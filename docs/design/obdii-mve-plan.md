@@ -471,6 +471,42 @@ the `PidCodec` + core contracts are the reusable, portable parts.
   retryable), and a `401` parks rows `PENDING` indefinitely (M5 should surface it to the
   operator). Scope held to M4 (no app UI/GPS/E2E-Map/approval-automation/`tpd_`). Gate green
   (**42** `gateway-core` after round-2 = **85 total**; `failures=0 errors=0`).
+- **Diff-stage rubber-duck (M5 implementation, `feat/m5-e2e` / PR #9):** **ran** on the M5
+  code diff. `verifier` verdict **"M5 conforms"** (7/7 checklist, gate re-run green); the
+  A7 E2E script's backend fidelity was **verified endpoint-by-endpoint against `~/ws/TagPulse`
+  @ `06dde2b`** — the tenant `tp_` ingest+admin auth (a **single** `tp_` key routes both the
+  asset/binding writes and the `tag-reads` POST), the `POST /categories` → `/assets` →
+  `/assets/{id}/bindings` seed with `binding_kind='device'` (so `binding_value` = the phone's
+  `tag_id`), the `POST /tag-reads/batch` shape (`sensor_data` + `location{accuracy_m, source:"gps"}`
+  → `201 {ingested,rejected}`), and the `GET /assets/current-locations` assertion that the
+  seeded vehicle appears at the read's location with `kind='geo'` (the `tag_id ↔
+  binding_kind='device'` join). Script is **HIL / not run here** (no Docker in this WSL distro);
+  the runnable procedure + exact run steps are documented in `scripts/e2e/README.md`.
+  code-review **"no blocking issues."** **Round-2 applied 2 small hardenings** (both make the
+  coordinator's documented contract airtight; no happy-path behavior change): (1) the
+  `enqueue → drain` tail of `ScanCoordinator.scan()` is now wrapped so an **unexpected**
+  exception (e.g. a catastrophic Room write failure) rethrows `CancellationException` first,
+  else lands as a terminal `ScanState.Error(INTERNAL, <secret-free msg>)` (the mutex still
+  unlocks) — previously it could strand `Reading`/`Relaying` and propagate out of the UI
+  coroutine, violating the "every outcome lands in state; only cooperative cancellation
+  propagates" contract (**+2 coordinator tests**: a throwing `Outbox` insert and a throwing
+  `Relay.drain` both end `Error(INTERNAL)`, no propagation). (2) the `report.failed > 0` relay
+  message was corrected — `FAILED` rows are **terminal** (the drainer only reprocesses
+  `PENDING`), so the old "stay queued for retry" wording was wrong; now "Relay failed: N read(s)
+  could not be delivered after retries (check connectivity / the backend)." (The credential-error
+  branch is unchanged — those rows genuinely stay `PENDING`; this closes ledger **`C-5EHY`** by
+  surfacing `DrainReport.credentialError` to the operator as a re-enrol/check-key message.)
+  Accepted design decisions (no change): the composition-root deps `:app` names
+  (`room-runtime`/`okhttp`/`jackson-databind`) are `gateway-core`'s runtime-encapsulated
+  `implementation` types already in the merged APK → **no footprint change**; and
+  `LocationProvider`'s Android impl uses **`LocationManager` not Fused** (avoids the Google
+  Play Services dependency / footprint budget). One **non-blocking** follow-up deferred (logged
+  to the ledger) — **`C-RYH7`**: `AppContainer` carries placeholder constants
+  (`DEFAULT_BASE_URL`/binding value) pending the real enrol/bind UX needed for the real-device
+  A6/A7 HIL. **MVE acceptance after M5:** A1–A5 **code-complete** (real creds/backend are HIL);
+  A6/A7 **HIL** + a runnable A7 script; **A8 gate green**. Scope held to M5 (no Tracker/background
+  mode, iOS, multi-vehicle fan-in, DTC/VIN). Gate green (**app 10 + gateway-core 42 + obdii 42 =
+  94 total**; `failures=0 errors=0`).
 - **Diff-stage rubber-duck (this plan doc, docs-only):** n/a — this plan/proposal change is
   **docs-only**. Per AGENTS §6 the docs carve-out applies (no deps/CI/IaC/security/behavioral
   config touched), **but** this plan **gates** the Phase-0 implementation, which is *not*

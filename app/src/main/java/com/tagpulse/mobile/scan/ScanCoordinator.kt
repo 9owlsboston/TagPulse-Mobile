@@ -88,15 +88,30 @@ class ScanCoordinator(
             val observation = readOrFail(device, mirror) ?: return@coroutineScope
             mirror?.cancelAndJoin()
 
-            // Attach the one-shot GPS fix (plan §4). A missing fix is not an error —
-            // the read still relays; the mapper renders a present fix to Location(source=gps).
-            val fix = currentFixOrNull()
-            val located = observation.copy(location = fix)
-            outbox.enqueue(located)
+            // The enqueue→drain tail. drain() is non-throwing today, but enqueue() could
+            // in principle throw (a catastrophic Room / serialization failure) — catch it
+            // so an unexpected error still lands as a terminal Error (never strands a
+            // non-terminal Reading/Relaying, per this class's contract). Cancellation
+            // propagates (rethrown first, like the other helpers).
+            try {
+                // Attach the one-shot GPS fix (plan §4). A missing fix is not an error —
+                // the read still relays; the mapper renders a present fix to Location(source=gps).
+                val fix = currentFixOrNull()
+                val located = observation.copy(location = fix)
+                outbox.enqueue(located)
 
-            _state.value = ScanState.Relaying
-            val report = relay.drain()
-            _state.value = resultOf(report, located, hasLocation = fix != null)
+                _state.value = ScanState.Relaying
+                val report = relay.drain()
+                _state.value = resultOf(report, located, hasLocation = fix != null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "unexpected failure in the enqueue/drain tail", e)
+                _state.value = ScanState.Error(
+                    ScanState.ErrorKind.INTERNAL,
+                    "Something went wrong saving/relaying the read — please try again.",
+                )
+            }
         } finally {
             scanLock.unlock()
         }
@@ -161,7 +176,8 @@ class ScanCoordinator(
         )
         report.failed > 0 -> ScanState.Error(
             ScanState.ErrorKind.RELAY,
-            "Relay failed: ${report.failed} read(s) could not be delivered — they stay queued for retry.",
+            "Relay failed: ${report.failed} read(s) could not be delivered after retries " +
+                "(check connectivity / the backend).",
         )
         else -> ScanState.Done(
             pids = pidsOf(observation.payload),

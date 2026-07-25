@@ -65,5 +65,8 @@ sealed interface ScanState {
 
         /** The read enqueued but the drain parked it `FAILED` (retryable exhausted / terminal). */
         RELAY,
+
+        /** An unexpected internal failure (e.g. the durable enqueue itself threw). */
+        INTERNAL,
     }
 }

@@ -199,6 +199,40 @@ class ScanCoordinatorTest {
         assertOrder(emissions, ScanState.Handshaking, ScanState.Reading, ScanState.Relaying)
     }
 
+    @Test
+    fun `an unexpected enqueue failure lands a terminal INTERNAL error, not stranded`() = runTest {
+        // A catastrophic durable-write failure must not strand Reading/Relaying or
+        // propagate out of the scan coroutine (the class's terminal-state contract).
+        val throwingOutbox = Outbox(ThrowingInsertOutboxDao())
+        val coordinator = ScanCoordinator(
+            driver = FakeGatewayDriver(),
+            locationProvider = FixedLocationProvider(fix),
+            outbox = throwingOutbox,
+            relay = FakeRelay(),
+        )
+
+        coordinator.scan() // must return normally (no exception propagates)
+        advanceUntilIdle()
+
+        val state = coordinator.state.value
+        assertTrue("expected Error, was $state", state is ScanState.Error)
+        assertEquals(ScanState.ErrorKind.INTERNAL, (state as ScanState.Error).kind)
+    }
+
+    @Test
+    fun `an unexpected drain failure lands a terminal INTERNAL error, not stranded`() = runTest {
+        val coordinator = coordinator(relay = FakeRelay(error = RuntimeException("boom")))
+
+        coordinator.scan() // must return normally
+        advanceUntilIdle()
+
+        val state = coordinator.state.value
+        assertTrue("expected Error, was $state", state is ScanState.Error)
+        assertEquals(ScanState.ErrorKind.INTERNAL, (state as ScanState.Error).kind)
+        // The read was durably enqueued before the drain threw.
+        assertEquals(1, outbox.pending().size)
+    }
+
     // -- helpers ---------------------------------------------------------------
 
     private fun kotlinx.coroutines.test.TestScope.collectStates(

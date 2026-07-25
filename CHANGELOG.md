@@ -53,6 +53,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     path, and the live driver-link state mirror.
   - **MVE acceptance after M5:** A1–A5 code-complete (real creds/backend are HIL),
     A6/A7 delivered as HIL + the runnable A7 E2E script, **A8 gate green**.
+  - **Round-2 hardenings** (post-review, same PR): the `ScanCoordinator.scan()`
+    `enqueue → drain` tail is now wrapped so an unexpected exception (e.g. a
+    catastrophic Room write) rethrows `CancellationException` first, else lands as a
+    terminal `ScanState.Error(INTERNAL, …)` with the mutex still unlocked — no stranded
+    non-terminal state (`ErrorKind.INTERNAL` added; +2 coordinator tests). The
+    `report.failed > 0` relay message was corrected — `FAILED` rows are terminal (not
+    retried), so it now reads "Relay failed: N read(s) could not be delivered after
+    retries (check connectivity / the backend)."
   Gate green (`./gradlew lintDebug testDebugUnitTest assembleDebug`).
 
 - **M4 (Enrolment + relay)** of the OBD-II MVE, in `:gateway-core` (new `relay`

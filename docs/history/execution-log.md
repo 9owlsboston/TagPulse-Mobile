@@ -556,3 +556,23 @@ the pre-existing `GradleDependency`/`AndroidGradlePluginVersion`/`DataExtraction
 warnings — the two new-from-M5 warnings `RedundantLabel`/`MissingApplicationIcon` were removed/
 suppressed); `app-debug.apk` built. `docs-drift` clean. `CHANGELOG` + execution-log updated
 (current-state left for close-out). Diff-stage rubber-duck: pending (verifier next).
+
+**Round-2 (same branch `feat/m5-e2e` / PR #9) — post-review hardenings + attestation.**
+Both gates passed (verifier "M5 conforms", A7 fidelity verified endpoint-by-endpoint against
+`~/ws/TagPulse` @ `06dde2b`; code-review "no blocking issues"). Applied two tiny hardenings,
+scope held to M5: (1) **airtight terminal state** — the `enqueue → drain` tail of
+`ScanCoordinator.scan()` is now wrapped so an unexpected exception (e.g. a catastrophic Room
+write) rethrows `CancellationException` first, else lands as a terminal
+`ScanState.Error(INTERNAL, <secret-free msg>)` with the mutex still unlocked (previously an
+`enqueue()` throw could strand `Reading`/`Relaying` and propagate out of the UI coroutine);
+added `ErrorKind.INTERNAL`. (2) **corrected FAILED relay message** — `FAILED` rows are terminal
+(the drainer only reprocesses `PENDING`), so the "stay queued for retry" wording was wrong; now
+"Relay failed: N read(s) could not be delivered after retries (check connectivity / the
+backend)." (credential-error branch unchanged — those rows genuinely stay `PENDING`). Added
+**+2 coordinator tests** (throwing `Outbox` insert → `Error(INTERNAL)`, no propagation;
+throwing `Relay.drain` → `Error(INTERNAL)`, read still durably enqueued). Recorded the M5
+diff-stage rubber-duck attestation in `docs/design/obdii-mve-plan.md` `## Review attestations`
+and mirrored it into the PR #9 body. Verified — gate GREEN: `BUILD SUCCESSFUL`; unit tests
+`failures=0 errors=0` (app **10** = AppWiring 1 + ScanCoordinator **9**; gateway-core 42; obdii
+42 = **94 total**); `docs-drift` clean. Non-blocking follow-up **`C-RYH7`** deferred
+(`AppContainer` enrol/bind-UX placeholders for real-device A6/A7 HIL).

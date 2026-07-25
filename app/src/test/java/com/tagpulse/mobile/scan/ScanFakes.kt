@@ -9,6 +9,10 @@ import com.tagpulse.gateway.core.Source
 import com.tagpulse.gateway.core.Subject
 import com.tagpulse.gateway.core.SubjectKind
 import com.tagpulse.gateway.core.relay.DrainReport
+import com.tagpulse.gateway.core.outbox.OutboxDao
+import com.tagpulse.gateway.core.outbox.OutboxItem
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import java.time.Instant
 
 /**
@@ -73,14 +77,40 @@ class FakeGatewayDriver(
 /**
  * A [Relay] returning a scripted [DrainReport] and counting calls — the coordinator
  * gate seam for the drain outcome (the real `Drainer` + backend are exercised in
- * `:gateway-core` and HIL).
+ * `:gateway-core` and HIL). If [error] is set, [drain] throws it (to prove the
+ * coordinator never strands a non-terminal state on an unexpected drain failure).
  */
-class FakeRelay(private val report: DrainReport = DrainReport(sent = 1, batches = 1)) : Relay {
+class FakeRelay(
+    private val report: DrainReport = DrainReport(sent = 1, batches = 1),
+    private val error: Throwable? = null,
+) : Relay {
     var drainCalls = 0
         private set
 
     override suspend fun drain(): DrainReport {
         drainCalls++
+        error?.let { throw it }
         return report
     }
+}
+
+/**
+ * An [OutboxDao] whose `insert` throws — used to build an [Outbox] that fails on
+ * `enqueue`, proving the coordinator's "every outcome lands in state; only
+ * cancellation propagates" contract holds even on a catastrophic durable-write
+ * failure. All other methods are inert.
+ */
+class ThrowingInsertOutboxDao(
+    private val error: Throwable = IllegalStateException("simulated Room insert failure"),
+) : OutboxDao {
+    override suspend fun insert(item: OutboxItem): Long = throw error
+    override suspend fun byState(state: String): List<OutboxItem> = emptyList()
+    override fun observeByState(state: String): Flow<List<OutboxItem>> = emptyFlow()
+    override suspend fun count(): Int = 0
+    override fun observeCount(): Flow<Int> = emptyFlow()
+    override suspend fun countByState(state: String): Int = 0
+    override suspend fun updateStateAndAttempts(id: Long, state: String, attempts: Int): Int = 0
+    override suspend fun deleteById(id: Long): Int = 0
+    override suspend fun deleteCapturedBefore(cutoff: Long): Int = 0
+    override suspend fun evictToCap(maxItems: Int): Int = 0
 }
