@@ -148,6 +148,48 @@ class DrainerTest {
     }
 
     @Test
+    fun `429 within maxBackoff honors Retry-After then succeeds`() = runBlocking {
+        outbox.enqueue(observation("veh-1"))
+        // 429 with a 5s Retry-After (< maxBackoff) then an accepted re-send.
+        val client = FakeBackendClient().enqueue(
+            BatchResult.Retryable("rate limited (429)", retryAfterMillis = 5_000L),
+            BatchResult.Accepted(ingested = 1, rejected = 0),
+        )
+        val sleeps = mutableListOf<Long>()
+
+        val report = drainer(client, sleeps = sleeps).drain()
+
+        // The Retry-After directive is honored verbatim (no exponential/jitter).
+        assertEquals(listOf(5_000L), sleeps)
+        assertEquals(2, client.callCount)
+        assertEquals(1, report.sent)
+        assertEquals(1, outbox.countInState(OutboxState.SENT))
+        assertNull(report.retryAfterMillis)
+    }
+
+    @Test
+    fun `429 with Retry-After beyond maxBackoff defers, leaving rows PENDING`() = runBlocking {
+        val id = outbox.enqueue(observation("veh-1"))
+        // Server asks to wait 1 h — far beyond the 1-min maxBackoff.
+        val client = FakeBackendClient()
+            .enqueue(BatchResult.Retryable("rate limited (429)", retryAfterMillis = 3_600_000L))
+        val sleeps = mutableListOf<Long>()
+
+        val report = drainer(client, sleeps = sleeps).drain()
+
+        // Deferred: one attempt made, then stop — no sleep, no FAIL, rows PENDING.
+        assertEquals(1, client.callCount)
+        assertEquals(emptyList<Long>(), sleeps)
+        assertEquals(3_600_000L, report.retryAfterMillis)
+        assertEquals(0, report.sent)
+        assertEquals(0, report.failed)
+        assertEquals(1, outbox.countInState(OutboxState.PENDING))
+        assertEquals(0, outbox.countInState(OutboxState.FAILED))
+        // Attempts NOT bumped — a defer is not a failed attempt.
+        assertEquals(0, outbox.pending().first { it.id == id }.attempts)
+    }
+
+    @Test
     fun `purgeExpired runs before send - stale rows are dropped, not relayed`() = runBlocking {
         outbox.enqueue(observation("stale", capturedAt = now.minus(Duration.ofHours(25))))
         outbox.enqueue(observation("fresh", capturedAt = now.minus(Duration.ofHours(1))))

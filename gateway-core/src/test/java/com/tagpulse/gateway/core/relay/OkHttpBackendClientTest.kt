@@ -9,6 +9,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -125,6 +126,43 @@ class OkHttpBackendClientTest {
         server.enqueue(MockResponse().setResponseCode(401).setBody("unauthorized"))
         val result = client.postTagReadsBatch(listOf(sampleRead()))
         assertTrue(result is BatchResult.CredentialError)
+    }
+
+    @Test
+    fun `408 maps to Retryable`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(408).setBody("request timeout"))
+        val result = client.postTagReadsBatch(listOf(sampleRead()))
+        assertTrue(result is BatchResult.Retryable)
+        assertNull((result as BatchResult.Retryable).retryAfterMillis)
+    }
+
+    @Test
+    fun `429 maps to Retryable and honors Retry-After delta-seconds`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(429).setHeader("Retry-After", "30").setBody("slow down"),
+        )
+        val result = client.postTagReadsBatch(listOf(sampleRead()))
+        assertTrue(result is BatchResult.Retryable)
+        assertEquals(30_000L, (result as BatchResult.Retryable).retryAfterMillis)
+    }
+
+    @Test
+    fun `429 without Retry-After is Retryable with no directive`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(429).setBody("slow down"))
+        val result = client.postTagReadsBatch(listOf(sampleRead()))
+        assertTrue(result is BatchResult.Retryable)
+        assertNull((result as BatchResult.Retryable).retryAfterMillis)
+    }
+
+    @Test
+    fun `429 with non-numeric (HTTP-date) Retry-After falls back to no directive`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(429)
+                .setHeader("Retry-After", "Wed, 21 Oct 2026 07:28:00 GMT").setBody("slow down"),
+        )
+        val result = client.postTagReadsBatch(listOf(sampleRead()))
+        assertTrue(result is BatchResult.Retryable)
+        assertNull((result as BatchResult.Retryable).retryAfterMillis)
     }
 
     @Test

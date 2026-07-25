@@ -25,10 +25,12 @@ import kotlin.random.Random
  *    each to a generated `TagReadCreate`, and POST the batch.
  * 3. Apply the outcome:
  *    - **`201`** → the rows go `PENDING → SENT`.
- *    - **Retryable (`5xx`/network)** → bump `attempts`, **full-jitter exponential
- *      backoff**, retry the same batch; once `attempts` would reach
- *      [DrainConfig.maxAttempts] the rows are parked **FAILED** (surfaced, not
- *      dropped).
+ *    - **Retryable (`5xx`/`408`/`429`/network)** → bump `attempts`, back off (a `429`
+ *      `Retry-After` ≤ `maxBackoff` is honored in place of the computed backoff, else
+ *      **full-jitter exponential backoff**), retry the same batch; once `attempts` would
+ *      reach [DrainConfig.maxAttempts] the rows are parked **FAILED** (surfaced, not
+ *      dropped). A `429` `Retry-After` **longer than `maxBackoff`** instead **defers** —
+ *      the batch stays **PENDING** (no attempt counted) and the drain stops for a later pass.
  *    - **Terminal (`4xx`, e.g. 400)** → the rows go straight to **FAILED**.
  *    - **`401` credential error** → abort the drain, leaving rows **PENDING** (a
  *      fixed credential re-drains them) — no per-row terminal-fail spam.
@@ -101,6 +103,18 @@ class Drainer(
                     rejected += outcome.rejected
                 }
                 is BatchDelivery.Failed -> failed += batch.size
+                is BatchDelivery.Deferred ->
+                    // Server rate-limited us for longer than we'll block: stop the
+                    // drain, leaving the batch (and any later rows) PENDING for a
+                    // future pass. Surface the directive; don't fail rows.
+                    return DrainReport(
+                        sent = sent,
+                        rejected = rejected,
+                        failed = failed,
+                        purged = purged,
+                        batches = batches,
+                        retryAfterMillis = outcome.retryAfterMillis,
+                    )
                 is BatchDelivery.CredentialBlocked ->
                     return DrainReport(
                         sent = sent,
@@ -154,6 +168,20 @@ class Drainer(
                 BatchDelivery.CredentialBlocked(result.reason)
 
             is BatchResult.Retryable -> {
+                // A server Retry-After (429) longer than we're willing to block an
+                // on-demand drain: defer — leave rows PENDING, do NOT bump attempts or
+                // FAIL, and stop the pass so a later drain retries. Clamping it down
+                // instead would retry prematurely and eventually FAIL rows the server
+                // would still accept (rubber-duck finding).
+                val retryAfter = result.retryAfterMillis
+                if (retryAfter != null && retryAfter > config.maxBackoff.toMillis()) {
+                    Log.i(
+                        TAG,
+                        "batch deferred: Retry-After ${retryAfter}ms exceeds maxBackoff " +
+                            "${config.maxBackoff.toMillis()}ms; leaving ${batch.size} row(s) PENDING",
+                    )
+                    return BatchDelivery.Deferred(retryAfter)
+                }
                 // Failures accrued so far for this batch (attempts is persisted, so
                 // this survives process restarts / prior drains).
                 val failuresSoFar = batch.maxOf { it.attempts }
@@ -169,7 +197,8 @@ class Drainer(
                 for (item in batch) {
                     outbox.transition(item.id, OutboxState.PENDING, item.attempts + 1)
                 }
-                val waitMillis = backoffMillis(failuresSoFar)
+                // Honor a (≤ maxBackoff) Retry-After exactly; otherwise full-jitter backoff.
+                val waitMillis = retryAfter ?: backoffMillis(failuresSoFar)
                 Log.i(TAG, "batch retryable (${result.reason}); attempt $nextAttempts/${config.maxAttempts}, backoff ${waitMillis}ms")
                 try {
                     sleep(waitMillis)
@@ -201,6 +230,13 @@ class Drainer(
         data class Sent(val rejected: Int) : BatchDelivery
         data object Failed : BatchDelivery
         data class CredentialBlocked(val reason: String) : BatchDelivery
+
+        /**
+         * Server asked (via `Retry-After` on a `429`) to wait longer than [Drainer]
+         * will synchronously block; rows stay `PENDING` (uncounted attempt) and the
+         * drain stops so a later pass retries. [retryAfterMillis] is the directive.
+         */
+        data class Deferred(val retryAfterMillis: Long) : BatchDelivery
     }
 
     private companion object {

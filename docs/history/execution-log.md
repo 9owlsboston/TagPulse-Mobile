@@ -576,3 +576,26 @@ and mirrored it into the PR #9 body. Verified — gate GREEN: `BUILD SUCCESSFUL`
 `failures=0 errors=0` (app **10** = AppWiring 1 + ScanCoordinator **9**; gateway-core 42; obdii
 42 = **94 total**); `docs-drift` clean. Non-blocking follow-up **`C-RYH7`** deferred
 (`AppContainer` enrol/bind-UX placeholders for real-device A6/A7 HIL).
+
+## 2026-07-25 — Follow-up chores C-1TQZ (verify) + C-4T93 (relay 429/408 → retryable)
+
+Post-M5 ledger follow-ups, worked through the SDLC on `fix/relay-429-408-retryable`.
+
+- **C-1TQZ — already done.** Verified the atomic single-statement `OutboxDao.evictToCap`
+  (`DELETE … WHERE id NOT IN (SELECT … ORDER BY created_at DESC, id DESC LIMIT :maxItems)`) and
+  its `OutboxCapsTest."atomic cap does not over-evict"` test landed in merged PR #8; the ledger
+  chore was stale. No code change — resolved the chore.
+- **C-4T93 — fixed.** `OkHttpBackendClient.postTagReadsBatch` mapped `429`/`408` into
+  `else → Terminal` (rows dropped `FAILED`). Now `408 → Retryable` and `429 → Retryable` with the
+  server's `Retry-After` (delta-seconds, overflow-guarded) carried on a new optional
+  `BatchResult.Retryable.retryAfterMillis`. `Drainer`: honors a `Retry-After` ≤ `maxBackoff`
+  verbatim in place of computed backoff; a `Retry-After` > `maxBackoff` **defers** (new
+  `BatchDelivery.Deferred` → `DrainReport.retryAfterMillis`; rows stay `PENDING`, no attempt
+  counted, drain stops for a later pass) — the plan-stage rubber-duck's blocking finding
+  (downward-clamp would prematurely retry and fail deliverable rows).
+- **Gates.** Plan-stage rubber-duck (1 blocking → revised). Diff-stage code-review (no blocking;
+  1 Low overflow hardening applied). Attestations in `docs/design/obdii-mve-plan.md`
+  `## Review attestations`.
+- **Verified.** `./gradlew :gateway-core:lintDebug :gateway-core:testDebugUnitTest` →
+  `BUILD SUCCESSFUL`, lint clean, **gateway-core 48 tests** (+6: 4 client status-map + 2 drainer
+  honor/defer), `failures=0 errors=0`. `current-state`: not-affected (no snapshot bump).

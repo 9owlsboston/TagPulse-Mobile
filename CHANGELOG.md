@@ -92,6 +92,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Gate green (`./gradlew lintDebug testDebugUnitTest assembleDebug`).
 
 ### Fixed
+- **`C-4T93` — HTTP `429`/`408` from the ingest backend are now retryable, not
+  terminal.** `OkHttpBackendClient` previously mapped every non-`401`/non-`5xx`
+  status (including `429 Too Many Requests` and `408 Request Timeout`) to
+  `BatchResult.Terminal`, so a rate-limited or timed-out batch was parked `FAILED`
+  instead of retried. Both now map to `BatchResult.Retryable`. A `429` **honors the
+  server's `Retry-After`** (delta-seconds form) via a new optional
+  `Retryable.retryAfterMillis`: the `Drainer` waits exactly that long (≤ `maxBackoff`)
+  in place of its computed backoff, and when the directive **exceeds `maxBackoff`** it
+  **defers** — the batch stays `PENDING` (no attempt counted, no rows failed) and the
+  drain stops for a later pass (surfaced via `DrainReport.retryAfterMillis`), avoiding
+  premature retries that would otherwise exhaust `maxAttempts` and fail deliverable
+  rows.
 - **`C-1TQZ` — outbox size cap is now atomic.** With M4 adding a second writer (the
   drainer), `Outbox.enforceSizeCap()` folds count + eviction into a single-statement
   DAO `evictToCap(maxItems)` (`DELETE … WHERE id NOT IN (SELECT … LIMIT :maxItems)`),
