@@ -12,6 +12,8 @@ okhttp = "4.12.0"
 securityCrypto = "1.1.0-alpha06"
 activityCompose = "1.9.3"
 composeBom = "2024.09.03"
+cameraX = "1.3.4"
+mlkitBarcode = "17.3.0"
 junit = "4.13.2"
 robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
@@ -51,6 +53,16 @@ androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+
+# Enrolment QR scanner (ledger C-RYH7 Increment 1b). ML Kit barcode-scanning is the
+# BUNDLED model (in-APK); it still pulls Google Play Services artifacts transitively
+# (play-services-basement/mlkit) — an accepted footprint tradeoff (OQ1, eyes-open).
+# CameraX drives the preview + frame analysis.
+androidx-camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "cameraX" }
+androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "cameraX" }
+androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "cameraX" }
+androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraX" }
+mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcode" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

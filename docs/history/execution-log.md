@@ -655,3 +655,29 @@ Design: `docs/design/enrolment-flow.md`. Decisions OQ1–OQ3 logged to the ledge
   51**, `failures=0 errors=0`; lint clean; debug APK built. **HIL (not here):** real Keystore,
   live provision→approve, end-to-end enrol→scan→Map via `scripts/e2e/a7-map-check.py`.
 - **current-state:** reconciled (enrolment moves the snapshot; vehicle-bind placeholder remains).
+
+## 2026-07-25 — C-RYH7 Increment 1b: enrolment QR scanner (ML Kit/CameraX)
+
+Full SDLC. The INC1 `EnrolScreen` QR affordance is now live.
+
+- **Change:** `EnrolmentQrCode` pure parser (`tagpulse://enrol?base=&pkey=`, `java.net.URI`,
+  never throws, rejects non-https/missing; redacted `ProvisioningPayload`); `QrScanActivity`
+  (HIL CameraX + ML Kit bundled, QR-only, camera-after-permission, `KEEP_ONLY_LATEST` + atomic
+  single-result + closes every `ImageProxy`/scanner, `exported=false`); `QrScanContract`;
+  `MainActivity.EnrolRoute` launches → parse → prefill. Deleted the unused INC1
+  `ProvisioningScanner` suspend seam (moved `ProvisioningPayload` into `EnrolmentQrCode.kt`).
+  Deps: ML Kit `barcode-scanning` (bundled) + CameraX; manifest `CAMERA` + `QrScanActivity`.
+- **Decision (surfaced + re-confirmed):** plan-duck verified ML Kit bundled pulls Google Play
+  Services artifacts (`play-services-basement`/`-mlkit`, per its POM) — contradicts the repo
+  no-GMS stance. Presented ZXing-embedded (GMS-free, ~0.5 MB) as the alternative; user chose to
+  keep ML Kit eyes-open. Logged to the ledger.
+- **Gates:** plan-stage rubber-duck (5 blocking: GMS/footprint surfaced, redacted payload,
+  pure-URI parser host=`enrol`, activity result/permission correctness, analyzer lifecycle) →
+  all addressed. Diff-stage code-review → no blocking (analyzer concurrency, lifecycle, parser,
+  prefill, secret hygiene all traced clean). Attestations in `docs/design/enrolment-flow.md`.
+- **Commands run:** `./gradlew :app:testDebugUnitTest :app:lintDebug assembleDebug` → green
+  (**app 31**, +11 QR parser; `failures=0 errors=0`); `./gradlew :app:assembleRelease` (R8) →
+  green, **no new `missing_rules`** (ML Kit ships consumer keep-rules). **Footprint measured:**
+  R8 release APK **2.3M → 24M** (bundled barcode model is a non-shrinkable asset); debug APK 36M.
+- **HIL (not here):** real camera decode on a device; the emitted QR needs backend/admin tooling
+  (app only parses). **current-state:** reconciled (QR scanner now shipped; footprint noted).

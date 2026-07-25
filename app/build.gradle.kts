@@ -95,6 +95,15 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
+    // Enrolment QR scanner (ledger C-RYH7 Increment 1b): CameraX preview/analysis +
+    // ML Kit barcode-scanning (bundled). The camera glue is HIL; the pure payload
+    // parser (EnrolmentQrCode) is gate-tested.
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.barcode.scanning)
+
     testImplementation(libs.junit)
     // ScanCoordinator logic is the gate-covered part (the Compose screen + the
     // Android GPS/BLE/Keystore impls are HIL): Robolectric drives the real Room

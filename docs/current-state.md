@@ -28,9 +28,10 @@ Increment 1) — the "Scan vehicle" screen is gated behind enrolment. Fully unit
 fake + Robolectric + OkHttp MockWebServer + coordinator/enrolment tests). **Remaining before
 it's demonstrably live: hardware-in-the-loop (HIL)** — a real BLE dongle, real GPS, real
 Keystore creds, and the live A6/A7 against a running dev tenant (a runnable, backend-validated
-E2E script exists at `scripts/e2e/a7-map-check.py`), plus the enrolment **QR scanner**
-(Increment 1b) and the **vehicle VIN-bind** (Increment 2 — OBD-II Mode 09 + VIN barcode +
-plate label, backend-gated on the `binding_value = VIN` convention).
+E2E script exists at `scripts/e2e/a7-map-check.py`), plus the **vehicle VIN-bind** (Increment 2
+— OBD-II Mode 09 + VIN barcode + plate label, backend-gated on the `binding_value = VIN`
+convention). The enrolment **QR scanner** (Increment 1b — CameraX + ML Kit) is built; camera
+decode is HIL.
 
 ## Diagram
 
@@ -52,11 +53,12 @@ One line per area, each linking to the doc that owns the detail.
   `Drainer` → `POST /tag-reads/batch`, at-least-once), and the `:app` **"Scan vehicle" Compose
   UI + GPS + composition root** wiring it end-to-end, plus the **handset↔tenant enrolment
   flow** (`app/enrol` `EnrolmentCoordinator` + `EnrolScreen`, Keystore-persisted `baseUrl`;
-  ledger `C-RYH7` Increment 1) gating the scan screen. MVE acceptance: **A1–A5 code-complete**
-  (real creds/backend HIL), **A6/A7 HIL** (+ runnable `scripts/e2e/a7-map-check.py`), **A8
-  gate green**. Next: enrolment **QR scanner** (Increment 1b) + the **vehicle VIN-bind**
-  (Increment 2, backend-gated) + real-device **HIL** (ledger `C-RYH7`); then the Phase-1+
-  roadmap. See [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md) and
+  ledger `C-RYH7` Increment 1) gating the scan screen, and an enrolment **QR scanner**
+  (Increment 1b — CameraX + ML Kit bundled; camera decode HIL). MVE acceptance: **A1–A5
+  code-complete** (real creds/backend HIL), **A6/A7 HIL** (+ runnable `scripts/e2e/a7-map-check.py`),
+  **A8 gate green**. Next: the **vehicle VIN-bind** (Increment 2, backend-gated) + real-device
+  **HIL** (ledger `C-RYH7`); then the Phase-1+ roadmap. See
+  [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md) and
   [`docs/design/enrolment-flow.md`](design/enrolment-flow.md).
 - **Backend contract** — consumed as-is from TagPulse `openapi.json`; **zero backend change**
   needed for the Phase-0 MVE (backend asks `I-75YC`/`I-9HQA`/`I-K6D1` are post-MVE).
