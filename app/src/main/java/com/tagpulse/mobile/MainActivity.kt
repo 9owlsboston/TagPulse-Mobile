@@ -13,13 +13,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.tagpulse.mobile.di.AppContainer
 import com.tagpulse.mobile.enrol.EnrolState
 import com.tagpulse.mobile.enrol.EnrolmentCoordinator
+import com.tagpulse.mobile.enrol.EnrolmentQrCode
+import com.tagpulse.mobile.enrol.ProvisioningPayload
+import com.tagpulse.mobile.enrol.QrScanContract
 import com.tagpulse.mobile.scan.ScanCoordinator
 import kotlinx.coroutines.launch
 
@@ -68,15 +74,26 @@ private fun AppRoot(container: AppContainer) {
 }
 
 /**
- * Binds the [EnrolmentCoordinator] to [com.tagpulse.mobile.ui.EnrolScreen]. Manual
- * entry only in Increment 1 (no QR affordance — the ML Kit scanner is Increment 1b).
+ * Binds the [EnrolmentCoordinator] to [com.tagpulse.mobile.ui.EnrolScreen] and wires the
+ * enrolment **QR scan** (Increment 1b): a launcher over [QrScanContract] returns the raw
+ * QR, which [EnrolmentQrCode.parse] turns into a [ProvisioningPayload] used to prefill the
+ * form (the `tp_` ingest key is still pasted). An unreadable / cancelled scan leaves the
+ * fields untouched.
  */
 @Composable
 private fun EnrolRoute(coordinator: EnrolmentCoordinator, state: EnrolState) {
     val scope = rememberCoroutineScope()
+    var prefill by remember { mutableStateOf<ProvisioningPayload?>(null) }
+
+    val qrLauncher = rememberLauncherForActivityResult(QrScanContract()) { raw ->
+        EnrolmentQrCode.parse(raw)?.let { prefill = it }
+    }
+
     com.tagpulse.mobile.ui.EnrolScreen(
         state = state,
         onEnrol = { input -> scope.launch { coordinator.enrol(input) } },
+        onScanQr = { qrLauncher.launch(Unit) },
+        prefill = prefill,
     )
 }
 

@@ -18,10 +18,13 @@ with fakes.
 
 ## Decisions carried in (from the `/explore C-RYH7` OQ discussion)
 
-- **OQ1 — QR decoder:** ML Kit barcode (bundled, no Play Services) + CameraX, manual
-  paste backup. **INC1 ships the seam + manual path only**; the ML Kit/CameraX impl
-  is **Increment 1b** (HIL, un-runtime-verifiable here). iOS→VisionKit later (separate
-  codebase).
+- **OQ1 — QR decoder:** ML Kit barcode (bundled) + CameraX, manual paste backup.
+  **Implemented in Increment 1b** (below). ⚠️ **Correction:** "bundled ML Kit" is *not*
+  Play-Services-free — `com.google.mlkit:barcode-scanning` pulls
+  `play-services-basement`/`-mlkit` transitively; the choice was **re-confirmed
+  eyes-open** over the GMS-free ZXing-embedded alternative, accepting the footprint
+  (R8 release APK **2.3M → 24M**, the bundled model being a non-shrinkable asset).
+  iOS→VisionKit later (separate codebase).
 - **OQ2 — QR payload:** carries `baseUrl` + provisioning key only; the sensitive
   `tp_` ingest key is entered via the manual (masked) paste field.
 - **OQ3 — vehicle key:** VIN (Increment 2, backend-gated). Out of INC1 scope.
@@ -67,12 +70,26 @@ per the OQ3 exploration finding, ingest authenticates with the tenant `tp_` key 
 the Map link keys on `tag_id`, **not** `device_id`, so an unapproved (`pending`) device
 can still relay. The returned `status` is surfaced for operator visibility.
 
-### 3. `ProvisioningScanner` seam (app)
+### 3. Enrolment QR scanner — `EnrolmentQrCode` + `QrScanActivity` (Increment 1b)
 
-`interface ProvisioningScanner { suspend fun scan(): ProvisioningPayload? }` returning
-a parsed `{ baseUrl, provisioningKey }`. INC1 provides the interface + a test fake; the
-UI's QR affordance is shown **only when a scanner is wired** (`AppContainer` passes
-`null` in INC1 → manual-only, no dead button). The ML Kit/CameraX impl is INC1b.
+The QR affordance in `EnrolScreen` (`onScanQr`/`prefill`) is realized via the
+`ActivityResult` pattern (the INC1 `ProvisioningScanner` suspend seam was unused and
+was removed):
+
+- **`EnrolmentQrCode.parse(raw): ProvisioningPayload?`** — a **pure** (`java.net.URI`,
+  no Android) parser for the QR format `tagpulse://enrol?base=<url-encoded https>&pkey=<key>`
+  (OQ2: base + provisioning key only, never the `tp_` key). Case-insensitive scheme/host
+  (`enrol` = authority), rejects non-`https`/malformed/missing params, **never throws**.
+  `ProvisioningPayload` is a non-`data` class with a **redacted** `toString()`. Gate-tested.
+- **`QrScanActivity`** (HIL) — CameraX preview + ML Kit `BarcodeScanning` (bundled,
+  QR-only). Binds the camera **only after** the `CAMERA` grant; a denial / provider
+  failure returns `RESULT_CANCELED`. `STRATEGY_KEEP_ONLY_LATEST` + `delivered`/`analyzing`
+  atomics guarantee one result and no `ImageProxy` leak; the scanner is closed on destroy.
+  `exported="false"`; never logs the decoded value. `QrScanContract` is an
+  `ActivityResultContract<Unit, String?>`.
+- **Wiring:** `MainActivity.EnrolRoute` launches the contract, parses the raw with
+  `EnrolmentQrCode`, and sets a `prefill` seeding the form; an unreadable/cancelled scan
+  leaves the fields untouched. The camera glue is HIL; the parser is the gate-covered logic.
 
 ### 4. `EnrolScreen` (app, Compose) + routing
 
@@ -117,9 +134,8 @@ live provision→approve against a dev tenant, and the end-to-end enrol→scan�
 
 ## Out of scope (staged)
 
-- **Increment 1b:** ML Kit/CameraX `ProvisioningScanner` impl (QR).
 - **Increment 2:** vehicle VIN-bind — OBD-II **Mode 09** auto-read (new multi-frame
-  parsing; today `PidCodec` is single-frame Mode 01), VIN barcode (reuses INC1b
+  parsing; today `PidCodec` is single-frame Mode 01), VIN barcode (reuses the Increment 1b
   scanner), plate display label. **Backend-gated:** `binding_value = VIN` convention +
   an asset plate-label field (ledger issue logged).
 
@@ -151,3 +167,26 @@ live provision→approve against a dev tenant, and the end-to-end enrol→scan�
   Kit QR scanner) and Increment 2 (vehicle VIN-bind) are staged follow-ups.
 - **current-state:** updated (the enrolment flow moves the "where we are now" snapshot — the
   handset can now be enrolled against a live tenant; the vehicle-bind placeholder remains).
+
+### Increment 1b — enrolment QR scanner (ML Kit/CameraX)
+
+- **Plan-stage rubber-duck:** **ran → 5 blocking findings.** (1) **Footprint/GMS** — ML Kit
+  bundled *does* pull Google Play Services artifacts (verified against the POM), contradicting
+  the no-GMS stance; surfaced to the operator, who **re-confirmed ML Kit eyes-open** over the
+  GMS-free ZXing-embedded alternative. (2) redacted `ProvisioningPayload.toString()`; (3) pure
+  `java.net.URI` parser with `enrol` as the **authority** (not path), no exceptions; (4)
+  `QrScanActivity` result/permission correctness (`setResult(RESULT_OK, extra)`, camera-after-
+  grant, denial→`CANCELED`, `exported=false`); (5) analyzer lifecycle (`KEEP_ONLY_LATEST`,
+  close every `ImageProxy`, single atomic result, close scanner). (2)–(5) all implemented.
+- **Diff-stage rubber-duck (code-review):** **ran → no blocking issues.** Independently traced
+  the analyzer concurrency (no `ImageProxy` leak/double-close on any branch; `delivered`/
+  `analyzing` CAS correct), the post-`finish()` / closed-scanner lifecycle (ML Kit returns a
+  failed `Task`, not a throw), the parser (`java.net.URI` populates `.host="enrol"`), the
+  prefill wiring (non-`data` reference-equality re-seeds on re-scan; non-Parcelable key is fine),
+  and secret hygiene (no raw-QR/key logging; `exported=false` internal Intent).
+- **Verification:** `:app:testDebugUnitTest` (**31**, incl. **+11** QR parser) + `:app:lintDebug`
+  + `assembleDebug` + **`:app:assembleRelease` (R8)** green; ML Kit ships its own consumer
+  keep-rules (no new `missing_rules`). **Footprint:** R8 release APK **2.3M → 24M** (the bundled
+  barcode model is a non-shrinkable asset) — the measured cost of the ML-Kit-bundled decision.
+- **HIL (not run here):** real camera decode on a device; the emitted QR needs backend/admin
+  tooling (the app only *parses* the format). Footprint acceptance is an HIL/CI call.

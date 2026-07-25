@@ -16,6 +16,11 @@
         android:name="android.permission.ACCESS_FINE_LOCATION"
         tools:remove="android:maxSdkVersion" />
 
+    <!-- Enrolment QR scan (ledger C-RYH7 Increment 1b). Camera is optional hardware:
+         the QR scan is a convenience over manual entry, so don't gate install on it. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
@@ -31,6 +36,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Enrolment QR scanner (C-RYH7 Increment 1b); internal, never exported. -->
+        <activity
+            android:name=".enrol.QrScanActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

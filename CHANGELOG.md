@@ -50,6 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - +11 `EnrolmentCoordinator` unit tests (fakes). **HIL** (not run here): real Keystore, a
     live `provision→approve`, and end-to-end enrol→scan→Map. **Increment 2** (vehicle
     VIN-bind — OBD-II Mode 09 + VIN barcode + plate label) is staged and backend-gated.
+- **Enrolment QR scanner** (ledger `C-RYH7`, Increment 1b) — the enrolment form's **Scan QR**
+  affordance is now live. A pure `EnrolmentQrCode` parser
+  (`tagpulse://enrol?base=…&pkey=…`; OQ2 — base + provisioning key only, `tp_` still pasted)
+  feeds a CameraX + **ML Kit** (bundled) `QrScanActivity` (`exported=false`, single-result
+  analyzer, camera-after-permission), wired into `MainActivity.EnrolRoute` to prefill the
+  form. +11 pure parser tests. **Footprint:** the bundled ML Kit barcode model grows the R8
+  release APK **2.3 MB → 24 MB** and pulls Google Play Services artifacts — an eyes-open
+  tradeoff (OQ1, chosen over GMS-free ZXing-embedded). Camera decode is **HIL**.
+
 
   proving the slice end-to-end. In `:app`:
   - **Jetpack Compose "Scan vehicle" screen** (`ui/ScanScreen.kt`) — a single-screen
