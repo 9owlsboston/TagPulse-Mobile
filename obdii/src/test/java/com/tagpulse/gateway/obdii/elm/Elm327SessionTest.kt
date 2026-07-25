@@ -46,6 +46,44 @@ class Elm327SessionTest {
     }
 
     @Test
+    fun `readVin issues 0902 and decodes the multi-frame VIN`() = runTest {
+        val vinFrames = listOf("014\r0:490201314434\r1:47503030523535\r2:42313233343536\r\r>")
+        val transport = FakeBleTransport(handshakeScript + ("0902" to vinFrames))
+        val session = Elm327Session(transport)
+
+        session.connect()
+        val reading = session.readVin()
+
+        assertEquals(VinReading.Value("1D4GP00R55B123456"), reading)
+        assertEquals("0902", transport.writes.last())
+        assertEquals(ConnectionState.Ready, session.state.value)
+    }
+
+    @Test
+    fun `readVin NO DATA yields a clean NO_DATA failure`() = runTest {
+        val transport = FakeBleTransport(handshakeScript + ("0902" to listOf("NO DATA\r\r>")))
+        val session = Elm327Session(transport)
+
+        session.connect()
+        val reading = session.readVin()
+
+        assertEquals(VinReading.Failure(ObdError.NO_DATA), reading)
+        assertTrue(session.state.value is ConnectionState.Error)
+    }
+
+    @Test
+    fun `readVin timeout yields a clean TIMEOUT failure`() = runTest {
+        // No script entry for 0902 -> no notifications -> the read times out.
+        val transport = FakeBleTransport(handshakeScript)
+        val session = Elm327Session(transport, commandTimeoutMs = 50, maxRetries = 0)
+
+        session.connect()
+        val reading = session.readVin()
+
+        assertEquals(VinReading.Failure(ObdError.TIMEOUT), reading)
+    }
+
+    @Test
     fun `RPM notifications fragmented across BLE frames are reassembled and decoded`() = runTest {
         // The 010C response arrives split across four separate notifications, the
         // last carrying the '>' prompt — the session must reassemble before decode.

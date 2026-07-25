@@ -69,6 +69,19 @@ class ObdiiDriver(
     }
 
     /**
+     * Read the vehicle **VIN** via Mode 09 (`0902`) — connect + handshake (if needed)
+     * then [Elm327Session.readVin] (ledger `C-RYH7` Increment 2b). OBD-II-specific
+     * (not part of the modality-neutral [GatewayDriver] seam); the bind flow's VIN
+     * auto-read calls it. Returns a [VinReading] (never throws for a read problem).
+     */
+    suspend fun readVin(): com.tagpulse.gateway.obdii.elm.VinReading {
+        val active = session
+            ?: error("ObdiiDriver has no Elm327Session; build it via ObdiiDriver.forAndroid(...) or ObdiiDriver.create(...)")
+        active.connect()
+        return active.readVin()
+    }
+
+    /**
      * Pure, synchronous normalize (no I/O — plan §3): reconstruct the snapshot from
      * the seam attributes and map it onto the core's [Observation]. `subject` /
      * `source` come from the injected [config] (a driver is bound to one vehicle);

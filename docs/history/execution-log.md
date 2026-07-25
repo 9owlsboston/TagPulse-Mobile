@@ -711,3 +711,26 @@ Full SDLC. Backend I-P923 shipped (TagPulse migration 062 / SHA 71ed1e6): `bindi
   binding). Follow-ups logged: backend return matched `binding_kind` from `by-binding`; re-vendor
   `openapi.json` to `71ed1e6`. **Increment 2b** (Mode 09) + **2c** (VIN barcode) staged.
   **current-state:** reconciled.
+
+## 2026-07-25 — C-RYH7 Increment 2b: OBD-II Mode 09 VIN auto-read
+
+Full SDLC. Adds the zero-touch VIN capture tier (OQ3 tier-1) feeding the 2a bind flow.
+
+- **Change:** `PidCodec.decodeVin` (pure multi-frame ISO-TP parser, CAN-scoped: strip error
+  tokens + ISO-TP line indices, concatenate hex, evaluate every `490201` candidate, accept
+  only one distinct 17-char alphanumeric VIN else MALFORMED); `VinReading` type;
+  `Elm327Session.readVin()` + `PID_VIN="0902"` (mirrors readRpm — bounded retry/reconnect,
+  Reading→Ready/Error); `ObdiiDriver.readVin()`; app `VinReader` seam + `VinReadOutcome`;
+  `VehicleBindingCoordinator.readVin()` (read → shared `resolveCore` → Confirming/plate; failure
+  → `Error(READ)`) with `resolve()` refactored to share `resolveCore`; `BindState.Reading` +
+  `ErrorKind.READ`; `BindScreen` "Read VIN from vehicle" button; `AppContainer` wires the reader
+  over the driver (lazy capture).
+- **Gates:** plan-stage rubber-duck (2 blocking: CAN-scope + legacy→MALFORMED fallback;
+  evaluate-all-candidates/distinct-VIN) → folded in. Diff-stage code-review → no blocking
+  (parser trace, Mutex/resolveCore, lazy driver capture, session mirroring, auto-read UX all
+  verified). Attestations in `docs/design/vehicle-bind-flow.md`.
+- **Commands:** `./gradlew :obdii:testDebugUnitTest :app:testDebugUnitTest
+  :gateway-core:testDebugUnitTest :app:lintDebug assembleDebug` → green: **obdii 55** (+13),
+  **app 50** (+3), **gateway-core 58**; `failures=0 errors=0`; lint clean; debug APK built.
+- **HIL:** real dongle Mode 09 read (CAN vehicles; legacy → manual fallback). **Increment 2c**
+  (VIN barcode, reuse the ML Kit scanner) staged. **current-state:** reconciled.

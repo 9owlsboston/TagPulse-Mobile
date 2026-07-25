@@ -80,6 +80,23 @@ sealed interface RpmReading {
 }
 
 /**
+ * Result of decoding a Mode 09 PID 02 **VIN** (`0902`) response — the 17-character
+ * VIN string or a clean [Failure] (ledger `C-RYH7` Increment 2b).
+ *
+ * Like [RpmReading], the decode never throws: `NO DATA` / `?` / a legacy/multi-ECU/
+ * malformed frame maps to [Failure] so a failed auto-read is a value the bind flow
+ * absorbs (fall back to manual VIN entry), not a crash.
+ */
+sealed interface VinReading {
+
+    /** Successfully decoded 17-character VIN (uppercase, alphanumeric). */
+    data class Value(val vin: String) : VinReading
+
+    /** The response could not be decoded into a VIN. */
+    data class Failure(val reason: ObdError) : VinReading
+}
+
+/**
  * Result of decoding a single J1979 PID response into an engineering-unit value
  * of type [T] — the generalized form of [RpmReading] used by the M2 four-PID
  * snapshot decode (plan §4).

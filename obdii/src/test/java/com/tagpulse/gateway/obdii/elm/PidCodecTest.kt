@@ -133,4 +133,63 @@ class PidCodecTest {
             PidCodec.decodeFuelLevel("UNABLE TO CONNECT\r>"),
         )
     }
+
+    // -- Mode 09 PID 02 VIN (Increment 2b) -------------------------------------
+
+    // VIN "1D4GP00R55B123456" → 490201 + its 17 ASCII bytes.
+    private val vin = "1D4GP00R55B123456"
+
+    @Test
+    fun `CAN line-numbered VIN with length line decodes`() {
+        val raw = "014\r0:490201314434\r1:47503030523535\r2:42313233343536\r\r>"
+        assertEquals(VinReading.Value(vin), PidCodec.decodeVin(raw))
+    }
+
+    @Test
+    fun `spaces-on single-line VIN decodes`() {
+        val raw = "49 02 01 31 44 34 47 50 30 30 52 35 35 42 31 32 33 34 35 36\r>"
+        assertEquals(VinReading.Value(vin), PidCodec.decodeVin(raw))
+    }
+
+    @Test
+    fun `VIN with trailing CAN padding after 17 bytes still decodes`() {
+        // Same VIN then padding bytes (0x00) that must be ignored (only 17 read).
+        val raw = "49020131443447503030523535423132333435360000\r>"
+        assertEquals(VinReading.Value(vin), PidCodec.decodeVin(raw))
+    }
+
+    @Test
+    fun `duplicate VIN echoes dedupe to one value`() {
+        val block = "49020131443447503030523535423132333435 36"
+        val raw = "$block\r$block\r>"
+        assertEquals(VinReading.Value(vin), PidCodec.decodeVin(raw))
+    }
+
+    @Test
+    fun `two conflicting VINs are ambiguous (MALFORMED)`() {
+        // Second block: last byte 36→37 (…6 → …7), a different valid VIN.
+        val raw = "49020131443447503030523535423132333435 36\r" +
+            "49020131443447503030523535423132333435 37\r>"
+        assertEquals(VinReading.Failure(ObdError.MALFORMED), PidCodec.decodeVin(raw))
+    }
+
+    @Test
+    fun `VIN NO DATA is a clean failure`() {
+        assertEquals(VinReading.Failure(ObdError.NO_DATA), PidCodec.decodeVin("NO DATA\r>"))
+    }
+
+    @Test
+    fun `VIN unsupported command is a clean failure`() {
+        assertEquals(VinReading.Failure(ObdError.UNSUPPORTED_COMMAND), PidCodec.decodeVin("?\r>"))
+    }
+
+    @Test
+    fun `no VIN header is MALFORMED`() {
+        assertEquals(VinReading.Failure(ObdError.MALFORMED), PidCodec.decodeVin("41 0C 0D 48\r>"))
+    }
+
+    @Test
+    fun `truncated VIN (fewer than 17 bytes) is MALFORMED`() {
+        assertEquals(VinReading.Failure(ObdError.MALFORMED), PidCodec.decodeVin("49020131443447\r>"))
+    }
 }

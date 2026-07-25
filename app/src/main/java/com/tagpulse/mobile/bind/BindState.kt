@@ -12,6 +12,9 @@ sealed interface BindState {
     /** Nothing in flight — the initial/resting state. */
     data object Idle : BindState
 
+    /** Reading the VIN from the vehicle over OBD-II (Mode 09). */
+    data object Reading : BindState
+
     /** `GET /assets/by-binding` is in flight. */
     data object Resolving : BindState
 
@@ -41,6 +44,9 @@ sealed interface BindState {
 
         /** `404` — no vehicle is registered for that VIN. */
         NOT_FOUND,
+
+        /** The OBD-II VIN auto-read failed (unsupported / no dongle / link error). */
+        READ,
 
         /** The resolved vehicle has no plate on file — the confirmation signal is missing. */
         NO_PLATE,

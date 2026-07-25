@@ -89,6 +89,11 @@ private fun BindRoute(coordinator: VehicleBindingCoordinator, state: BindState) 
         state = state,
         onResolve = { vin -> scope.launch { coordinator.resolve(vin) } },
         onConfirm = { coordinator.confirm() },
+        onReadFromVehicle = if (coordinator.canReadVin) {
+            { scope.launch { coordinator.readVin() } }
+        } else {
+            null
+        },
     )
 }
 
