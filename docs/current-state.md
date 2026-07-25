@@ -18,13 +18,15 @@ inspect) and Tracker (background moving beacon) — that is **offline-first** an
 
 **Where it stands today:** design drafted + the four foundational decisions locked (separate
 repo · hybrid · native Swift+Kotlin · HTTP-first), the **OBDII-on-demand MVE plan** agreed,
-and Phase-0 nearly complete — **M0 (scaffold) + M1 (BLE + RPM) + M2 (4-PID snapshot +
-normalize) + M3 (durable Room outbox) + M4 (enrolment + relay) merged**. The `:obdii` driver
-reads a 4-PID snapshot and `normalize()`s it into an `Observation`; `:gateway-core` persists
-each to a file-backed Room outbox and now **drains it as a batched `POST /tag-reads/batch`**
-(Keystore-backed tenant-key auth, at-least-once, retry/backoff/FAILED). Unit-tested via a BLE
-fake + Robolectric + OkHttp MockWebServer; real BLE + the Keystore are manual HIL checks.
-**M5 (wire the "Scan vehicle" UI + GPS end-to-end → Map confirmation)** is the last milestone.
+and the **Phase-0 MVE is code-complete — M0–M5 all merged**. The Android app runs the full
+green-zone slice: tap **"Scan vehicle"** → BLE-connect an ELM327 dongle → read a 4-PID
+snapshot → `normalize()` → attach a GPS fix → durable Room outbox → drain as a batched
+`POST /tag-reads/batch` (Keystore-backed tenant-key auth, at-least-once), surfaced on a
+Compose screen. Fully unit-tested (BLE fake + Robolectric + OkHttp MockWebServer + coordinator
+tests). **Remaining before it's demonstrably live: hardware-in-the-loop (HIL)** — a real BLE
+dongle, real GPS, real Keystore creds, and the live A6/A7 against a running dev tenant (a
+runnable, backend-validated E2E script exists at `scripts/e2e/a7-map-check.py`), plus the
+enrol/bind UX that writes real credentials (ledger `C-RYH7`).
 
 ## Diagram
 
@@ -38,17 +40,18 @@ One line per area, each linking to the doc that owns the detail.
 
 - **Design** — drafted; decisions D1–D4 locked, endpoints mapped, phased plan set. See
   [`docs/design/mobile-client.md`](design/mobile-client.md).
-- **App code** — **Phase-0 M0 + M1 + M2 + M3 + M4 merged**: Android Gradle project (`:app`,
+- **App code** — **Phase-0 MVE code-complete: M0–M5 merged.** Android Gradle project (`:app`,
   `:gateway-core`, `:obdii`), the `GatewayDriver` seam + `Observation` model, a **generated**
   backend client (openapi.json SHA `06dde2b`), an `obdii` driver (BLE → 4-PID snapshot →
-  `PidCodec` → `normalize()`), a `:gateway-core` **durable Room outbox**, and the **relay**:
-  a Keystore-backed `CredentialStore`, an OkHttp `BackendClient`, `Observation→TagReadCreate`
-  mapping, and a `Drainer` that drains the outbox → `POST /tag-reads/batch` (at-least-once,
-  retry/backoff, `PENDING→SENT`/`FAILED`). Next: **M5** (wire the "Scan vehicle" UI + GPS
-  end-to-end + the A7 Map E2E) per
-  [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md#8-milestones--phased-steps).
-- **Backend contract** — consumed as-is from TagPulse `openapi.json`; zero backend change
-  needed for Phase 0.
+  `PidCodec` → `normalize()`), a `:gateway-core` **durable Room outbox** + **relay**
+  (Keystore `CredentialStore`, OkHttp `BackendClient`, `Observation→TagReadCreate` mapping,
+  `Drainer` → `POST /tag-reads/batch`, at-least-once), and the `:app` **"Scan vehicle" Compose
+  UI + GPS + composition root** wiring it end-to-end. MVE acceptance: **A1–A5 code-complete**
+  (real creds/backend HIL), **A6/A7 HIL** (+ runnable `scripts/e2e/a7-map-check.py`), **A8
+  gate green**. Next: real-device **HIL** + the enrol/bind UX (ledger `C-RYH7`); then the
+  Phase-1+ roadmap. See [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md).
+- **Backend contract** — consumed as-is from TagPulse `openapi.json`; **zero backend change**
+  needed for the Phase-0 MVE (backend asks `I-75YC`/`I-9HQA`/`I-K6D1` are post-MVE).
 
 ## Future state / vision
 

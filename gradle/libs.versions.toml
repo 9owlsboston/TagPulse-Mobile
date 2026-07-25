@@ -10,6 +10,8 @@ coroutines = "1.9.0"
 room = "2.6.1"
 okhttp = "4.12.0"
 securityCrypto = "1.1.0-alpha06"
+activityCompose = "1.9.3"
+composeBom = "2024.09.03"
 junit = "4.13.2"
 robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
@@ -37,9 +39,19 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
 
+# Jetpack Compose (M5 "Scan vehicle" UI). The BOM aligns all Compose artifact
+# versions; individual libs below omit a version and inherit it from the BOM.
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 openapi-generator = { id = "org.openapi.generator", version.ref = "openapiGenerator" }
