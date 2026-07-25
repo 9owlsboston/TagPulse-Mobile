@@ -78,3 +78,26 @@ sealed interface RpmReading {
     /** The response could not be decoded into an RPM value. */
     data class Failure(val reason: ObdError) : RpmReading
 }
+
+/**
+ * Result of decoding a single J1979 PID response into an engineering-unit value
+ * of type [T] — the generalized form of [RpmReading] used by the M2 four-PID
+ * snapshot decode (plan §4).
+ *
+ * Like [RpmReading], the decode never throws on bad input: `NO DATA` / `?` /
+ * `UNABLE TO CONNECT` / malformed / wrong-header frames all map to [Failure], so a
+ * per-PID problem is a value the snapshot can absorb (that field goes null), not a
+ * crash that fails the whole read (plan §6).
+ *
+ * [RpmReading] is kept as a distinct type so the M1 `readRpm()` path and its tests
+ * are unchanged; snapshot decode uses this parametric type for the other three PIDs
+ * (and adapts RPM into it).
+ */
+sealed interface PidReading<out T> {
+
+    /** Successfully decoded engineering value (e.g. km/h, °C, %). */
+    data class Value<out T>(val value: T) : PidReading<T>
+
+    /** The response could not be decoded into a value. */
+    data class Failure(val reason: ObdError) : PidReading<Nothing>
+}

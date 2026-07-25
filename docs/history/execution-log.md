@@ -285,3 +285,38 @@ Verified — gate GREEN: `./gradlew clean lintDebug testDebugUnitTest assembleDe
 Elm327Session **9**, ObdiiDriver 2; gateway-core 2; app 1 = **23 total**); lint clean;
 `app-debug.apk` built. `docs-drift` clean. Diff-stage rubber-duck attestation recorded
 (ran → "M1 conforms"; 2 bugs fixed) in the plan `## Review attestations` + mirrored to PR #5.
+
+### 2026-07-24 — OBDII MVE M2: full four-PID snapshot + normalize
+
+Implemented milestone M2 of `docs/design/obdii-mve-plan.md` (§8 M2 row) on branch
+`feat/m2-snapshot`: decode all four MVE PIDs, assemble the §4 `sensor_data` snapshot, and
+map it to the core's `Observation` via a pure `normalize()`. Scope held to M2 — no
+Room/outbox (M3), no HTTP/batcher (M4), no GPS (`location` stays null), no enrolment/UI.
+
+- **PidCodec** — extended from RPM-only to all four PIDs behind a shared private
+  `parseFrame(response, header, minDataBytes)` (strip echo/whitespace/prompt, reject
+  `NO DATA`/`?`/`UNABLE TO CONNECT`, match the `41 <pid>` line, return its data bytes or a
+  typed reason). New pure decoders return a parametric `PidReading<T>`: `decodeSpeed`
+  (`010D`→`A` km/h, Int), `decodeCoolantTemp` (`0105`→`A−40` °C, Int, may be negative),
+  `decodeFuelLevel` (`012F`→`A*100/255` %, Float rounded to one decimal). `decodeRpm` keeps
+  its `RpmReading` return (M1 path/tests unchanged) but now delegates to the shared parser.
+- **ObdSnapshot** (new model) — nullable per-PID fields + optional `DongleInfo` + `rawFrames`
+  + `includeRaw` debug flag. `toPayload()` renders the plan §4 JSON shape (omits failed PIDs;
+  emits `raw` only when `includeRaw`); `toAttributes()`/`fromAttributes()` are a symmetric
+  round-trip that carries the snapshot across the string-typed `DriverReading` seam
+  (gateway-core untouched).
+- **Elm327Session.readSnapshot(includeRaw, dongle, capturedAt)** — requests `010C,010D,0105,
+  012F` in order via a generic `readPid()` helper (mirrors `requestRpm`'s bounded retry +
+  single reconnect, but returns `PidReading<T>` so a per-PID failure is a null field, never a
+  throw). Ends `Ready` even on partial failure. `readRpm()` (M1) kept intact.
+- **ObdiiDriver** — new injected `ObdiiConfig(subject, source, includeRawFrames, dongle)`;
+  `read()` now connects → handshakes → `readSnapshot()` → `DriverReading(snapshot.toAttributes())`;
+  `normalize()` (pure, no I/O) reconstructs the snapshot and emits `Observation(subject, source,
+  timestamp=capturedAt, payload=toPayload(), location=null)`. Removed the M1 `TODO` and the now-
+  unused `ObdReadException` (readSnapshot is graceful, so read no longer throws per-PID).
+
+Verified — gate GREEN: `ANDROID_HOME=/home/velen/android-sdk ./gradlew lintDebug
+testDebugUnitTest assembleDebug` → `BUILD SUCCESSFUL`; unit tests all `failures=0 errors=0`
+(obdii **42** — PidCodec 21, Elm327Session 12, ObdiiDriver 4, ObdSnapshot 5; gateway-core 2;
+app 1 = **45 total**); lint clean; `app-debug.apk` built. `docs-drift` clean. Diff-stage
+rubber-duck: pending (verifier next).

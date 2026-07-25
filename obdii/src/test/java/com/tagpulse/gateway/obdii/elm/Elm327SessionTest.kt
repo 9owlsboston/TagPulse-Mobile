@@ -6,6 +6,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -177,6 +178,76 @@ class Elm327SessionTest {
         assertEquals(RpmReading.Value(850), reading)
         assertEquals(2, transport.connectCount) // initial connect + one reconnect
         assertEquals(ConnectionState.Ready, session.state.value)
+    }
+
+    @Test
+    fun `readSnapshot reads all four PIDs and carries their engineering values`() = runTest {
+        val transport = FakeBleTransport(
+            handshakeScript + mapOf(
+                "010C" to listOf("41 0C 0D 48\r\r>"), // 850 rpm
+                "010D" to listOf("41 0D 32\r\r>"), // 50 km/h
+                "0105" to listOf("41 05 7B\r\r>"), // 83 °C
+                "012F" to listOf("41 2F 7F\r\r>"), // ~49.8 %
+            ),
+        )
+        val session = Elm327Session(transport)
+
+        session.connect()
+        val snapshot = session.readSnapshot()
+
+        // All four PIDs requested, in order, after the handshake.
+        assertEquals(
+            listOf("ATZ", "ATE0", "ATL0", "ATS0", "ATSP0", "010C", "010D", "0105", "012F"),
+            transport.writes,
+        )
+        assertEquals(850, snapshot.rpm)
+        assertEquals(50, snapshot.speedKph)
+        assertEquals(83, snapshot.coolantTempC)
+        assertEquals(49.8f, snapshot.fuelLevelPct)
+        assertEquals(ConnectionState.Ready, session.state.value)
+    }
+
+    @Test
+    fun `readSnapshot with one PID returning NO DATA lands the other three, no crash`() = runTest {
+        // Coolant (0105) answers NO DATA -> that field is null; the read does NOT
+        // fail wholesale and the session settles back on Ready (plan §4/§6).
+        val transport = FakeBleTransport(
+            handshakeScript + mapOf(
+                "010C" to listOf("41 0C 0D 48\r\r>"),
+                "010D" to listOf("41 0D 32\r\r>"),
+                "0105" to listOf("NO DATA\r\r>"),
+                "012F" to listOf("41 2F 7F\r\r>"),
+            ),
+        )
+        val session = Elm327Session(transport)
+
+        session.connect()
+        val snapshot = session.readSnapshot()
+
+        assertEquals(850, snapshot.rpm)
+        assertEquals(50, snapshot.speedKph)
+        assertNull(snapshot.coolantTempC)
+        assertEquals(49.8f, snapshot.fuelLevelPct)
+        assertEquals(ConnectionState.Ready, session.state.value)
+    }
+
+    @Test
+    fun `readSnapshot with includeRaw retains the source frames`() = runTest {
+        val transport = FakeBleTransport(
+            handshakeScript + mapOf(
+                "010C" to listOf("41 0C 0D 48\r\r>"),
+                "010D" to listOf("41 0D 32\r\r>"),
+                "0105" to listOf("41 05 7B\r\r>"),
+                "012F" to listOf("41 2F 7F\r\r>"),
+            ),
+        )
+        val session = Elm327Session(transport)
+
+        session.connect()
+        val snapshot = session.readSnapshot(includeRaw = true)
+
+        assertEquals("41 0C 0D 48", snapshot.rawFrames["010C"])
+        assertTrue(snapshot.includeRaw)
     }
 
     /** Assert [expected] appears as an in-order (not necessarily contiguous) subsequence. */

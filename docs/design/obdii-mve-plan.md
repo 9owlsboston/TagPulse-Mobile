@@ -415,6 +415,21 @@ the `PidCodec` + core contracts are the reusable, portable parts.
   reconnect path — **+3 `Elm327Session` tests** (generic-`BleException` on read + handshake;
   drop→reconnect→recover). Gate green (23 unit tests, `failures=0 errors=0`). HIL
   RPM-from-hardware remains a manual check.
+- **Diff-stage rubber-duck (M2 implementation, `feat/m2-snapshot` / PR #6):** **ran** on the
+  M2 code diff. `verifier` verdict **"M2 conforms"** (5/5 checklist, gate re-run green with
+  `--rerun-tasks`); code-review **"no blocking issues"** (verified by analysis + running the
+  42 obdii tests). **No round-2 needed — zero code fixes.** Independently verified: the four
+  J1979 decode formulas are correct in source (RPM `((A·256)+B)/4`; speed `A`; coolant
+  `A−40`, negative-capable; fuel `A·100/255` as a one-decimal float — proper float math);
+  `PidCodec.parseFrame` guards `NO DATA`/`?`/`UNABLE TO CONNECT`/wrong-header/odd-length
+  frames (never throws); `readSnapshot()` degrades **gracefully** (one PID `NO DATA` → null
+  field, others land, session ends `Ready`); and the `ObdSnapshot.toAttributes()/fromAttributes()`
+  round-trip across the string-typed seam is **locale-safe** (`Float.toString()`/`String.toFloat()`
+  are locale-independent). Reviewers judged the round-trip, the dead-`ObdReadException`
+  removal, and the M1-`ObdiiDriverTest` schema update all **justified, no regressions**
+  (M1 `readRpm`/session/reconnect tests retained + green). Gate green (**45 unit tests**,
+  `failures=0 errors=0`). Scope held to M2 (no outbox/HTTP/GPS/enrolment/UI); `gateway-core`
+  untouched.
 - **Diff-stage rubber-duck (this plan doc, docs-only):** n/a — this plan/proposal change is
   **docs-only**. Per AGENTS §6 the docs carve-out applies (no deps/CI/IaC/security/behavioral
   config touched), **but** this plan **gates** the Phase-0 implementation, which is *not*
