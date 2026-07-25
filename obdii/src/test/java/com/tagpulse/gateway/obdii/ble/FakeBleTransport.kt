@@ -21,12 +21,17 @@ import kotlinx.coroutines.flow.asStateFlow
  * command sequence/order.
  *
  * @param script command → ordered notification fragments to emit for it.
- * @param dropAfter if set, [write] throws [BleDisconnectedException] once this
- *   command is issued (models a mid-session GATT drop).
+ * @param dropAfter if set, [write] throws [BleDisconnectedException] the first time
+ *   this command is issued (models a mid-session GATT drop; the second attempt,
+ *   after a reconnect, succeeds — see [connectCount]).
+ * @param throwOn if set, [write] throws a generic [BleException] whenever this
+ *   command is issued (models a rejected / unsupported write, distinct from a
+ *   clean disconnect — used to prove generic-`BleException` handling).
  */
 class FakeBleTransport(
     private val script: Map<String, List<String>>,
     private val dropAfter: String? = null,
+    private val throwOn: String? = null,
 ) : BleTransport {
 
     private val _connected = MutableStateFlow(false)
@@ -52,6 +57,10 @@ class FakeBleTransport(
     override suspend fun write(command: ByteArray) {
         val cmd = String(command, Charsets.US_ASCII).trim()
         writes += cmd
+
+        if (throwOn != null && cmd == throwOn) {
+            throw BleException("write rejected (fake)")
+        }
 
         if (dropAfter != null && cmd == dropAfter && !dropTriggered) {
             dropTriggered = true

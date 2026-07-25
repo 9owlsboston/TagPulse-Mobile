@@ -15,7 +15,9 @@ import org.junit.Test
  * `docs/design/obdii-mve-plan.md` §6).
  *
  * Covers: (a) exact command order, (b) fragment reassembly to `>`, (c) parsed RPM,
- * (d) [ConnectionState] transitions, (e) timeout + `NO DATA` clean-failure paths.
+ * (d) [ConnectionState] transitions, (e) timeout + `NO DATA` clean-failure paths,
+ * plus round-2 hardware-path hardening: generic `BleException` handling on read +
+ * handshake, and the drop → reconnect → re-handshake recovery path.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class Elm327SessionTest {
@@ -121,6 +123,60 @@ class Elm327SessionTest {
         session.readRpm()
 
         assertEquals(listOf("OBD-II RPM = 850"), logged)
+    }
+
+    @Test
+    fun `a generic BleException on read is a clean LINK_ERROR failure, not a throw`() = runTest {
+        // Fix 1: AndroidBleTransport.write() can throw a generic BleException (not
+        // just BleDisconnectedException) — e.g. a rejected GATT write. readRpm()
+        // must NOT throw and the state must land on Error.
+        val transport = FakeBleTransport(handshakeScript, throwOn = "010C")
+        val session = Elm327Session(transport)
+
+        session.connect()
+        val reading = session.readRpm() // must not throw
+
+        assertEquals(RpmReading.Failure(ObdError.LINK_ERROR), reading)
+        assertTrue(session.state.value is ConnectionState.Error)
+        assertEquals(ObdError.LINK_ERROR, (session.state.value as ConnectionState.Error).reason)
+    }
+
+    @Test
+    fun `a generic BleException during handshake leaves Error and throws Elm327Exception`() = runTest {
+        // Fix 1: the handshake loop must also catch a generic BleException — state
+        // must be Error (not stuck at Handshaking) and the thrown type Elm327Exception.
+        val transport = FakeBleTransport(handshakeScript, throwOn = "ATE0")
+        val session = Elm327Session(transport)
+
+        val thrown: Throwable? = try {
+            session.connect()
+            null
+        } catch (e: Throwable) {
+            e
+        }
+
+        assertTrue("expected Elm327Exception, got $thrown", thrown is Elm327Exception)
+        assertTrue(session.state.value is ConnectionState.Error)
+        assertEquals(ObdError.LINK_ERROR, (session.state.value as ConnectionState.Error).reason)
+    }
+
+    @Test
+    fun `a mid-read disconnect triggers one reconnect, re-handshake, and recovers`() = runTest {
+        // Fix 5: exercise dropAfter + connectCount. The first 010C write drops the
+        // link; the session reconnects (connectCount == 2), re-runs the handshake,
+        // and the retried 010C returns a recovered value.
+        val transport = FakeBleTransport(
+            handshakeScript + ("010C" to listOf("41 0C 0D 48\r\r>")),
+            dropAfter = "010C",
+        )
+        val session = Elm327Session(transport, maxRetries = 1)
+
+        session.connect()
+        val reading = session.readRpm()
+
+        assertEquals(RpmReading.Value(850), reading)
+        assertEquals(2, transport.connectCount) // initial connect + one reconnect
+        assertEquals(ConnectionState.Ready, session.state.value)
     }
 
     /** Assert [expected] appears as an in-order (not necessarily contiguous) subsequence. */

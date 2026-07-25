@@ -250,3 +250,38 @@ HIL step, not covered by CI. UUIDs/framing/MTU-grant remain `unverified` (plan �
 validated on the purchased adapter.
 
 Diff-stage rubber-duck: pending (post-implement gate + verifier next).
+
+### 2026-07-24 — OBDII MVE M1 round-2: hardware-path fixes (post-code-review)
+
+`verifier` said "M1 conforms" (gate green) but code-review found 2 real hardware-path bugs
+the unit gate missed (because `FakeBleTransport` only threw `BleDisconnectedException`).
+Fixed on the same branch `feat/m1-ble-rpm` (PR #5), scope held to M1 (one PID, read+log):
+
+- **Fix 1 (HIGH)** — generic `BleException` was uncaught. `AndroidBleTransport.write()` can
+  throw a plain `BleException` ("characteristic write rejected" / "write characteristic not
+  resolved"), not only `BleDisconnectedException`. Added `catch (BleException)` to both the
+  `Elm327Session.connect()` handshake loop (→ `fail(LINK_ERROR)` + throw `Elm327Exception`;
+  state no longer stuck at Handshaking) and `requestRpm()` (→ `RpmReading.Failure(LINK_ERROR)`,
+  not retried; `readRpm()` never throws for a per-command failure — contract restored). New
+  `ObdError.LINK_ERROR`.
+- **Fix 2 (MED)** — `BluetoothGatt` leak on drop+reconnect. The `STATE_DISCONNECTED` branch
+  now `gatt.close()`s and nulls the field (guarded to the callback's own gatt), and
+  `connect()` closes any pre-existing gatt before assigning (guards re-entrant/reconnect).
+  `disconnect()` stays idempotent.
+- **Fix 3 (LOW)** — write type now derived from the resolved characteristic's properties
+  (`PROPERTY_WRITE`→`WRITE_TYPE_DEFAULT`, else `WRITE_TYPE_NO_RESPONSE`); many ELM327/Nordic
+  clones are write-no-response only. Marked `unverified` (HIL).
+- **Fix 4** — `Elm327Session.reconnect()` now rethrows `CancellationException` before its
+  broad catch (no swallowed structured-concurrency cancellation); the `connect()`
+  transport-connect catch also rethrows cancellation.
+- **Fix 5** — extended `FakeBleTransport` with a `throwOn: String?` hook (generic
+  `BleException`) and added tests using the existing `dropAfter`/`connectCount`: +3
+  `Elm327Session` tests — generic `BleException` on read → clean `LINK_ERROR` (no throw) +
+  Error state; generic `BleException` in handshake → Error + `Elm327Exception`;
+  drop→reconnect (`connectCount==2`)→re-handshake→recovered `Value(850)`.
+
+Verified — gate GREEN: `./gradlew clean lintDebug testDebugUnitTest assembleDebug` →
+`BUILD SUCCESSFUL`; unit tests all `failures=0 errors=0` (obdii **20** — PidCodec 9,
+Elm327Session **9**, ObdiiDriver 2; gateway-core 2; app 1 = **23 total**); lint clean;
+`app-debug.apk` built. `docs-drift` clean. Diff-stage rubber-duck attestation recorded
+(ran → "M1 conforms"; 2 bugs fixed) in the plan `## Review attestations` + mirrored to PR #5.

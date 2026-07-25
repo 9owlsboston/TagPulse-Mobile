@@ -56,6 +56,12 @@ enum class ObdError {
 
     /** The GATT link dropped and could not be re-established. */
     DISCONNECTED,
+
+    /**
+     * A non-disconnect transport failure — e.g. the GATT write was rejected or a
+     * required characteristic was unresolved (surfaced as a generic `BleException`).
+     */
+    LINK_ERROR,
 }
 
 /**

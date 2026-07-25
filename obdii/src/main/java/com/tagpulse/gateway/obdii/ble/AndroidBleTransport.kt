@@ -80,6 +80,11 @@ class AndroidBleTransport(
     @Volatile private var notifyReady: CompletableDeferred<Unit>? = null
 
     override suspend fun connect() {
+        // Guard re-entrant / reconnect: close any prior GATT so we don't leak a
+        // client interface (Android exhausts client slots on flaky links). Fix 2.
+        gatt?.close()
+        gatt = null
+
         val device = scanForDongle()
         withTimeout(stepTimeoutMs) {
             val services = CompletableDeferred<Unit>().also { servicesReady = it }
@@ -104,14 +109,19 @@ class AndroidBleTransport(
         val activeGatt = gatt ?: throw BleDisconnectedException()
         if (!_connected.value) throw BleDisconnectedException()
         val target = writeChar ?: throw BleException("write characteristic not resolved")
-        val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            activeGatt.writeCharacteristic(
-                target,
-                command,
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
-            ) == BluetoothStatusCodes.SUCCESS
+        // Match the write type to the characteristic's actual properties: many
+        // ELM327 / Nordic-UART clones expose write-NO-response only, and forcing
+        // WRITE_TYPE_DEFAULT (with-response) makes the stack reject the write.
+        // `unverified` (HIL) — validate on the purchased adapter (plan §6/§9).
+        val writeType = if (target.hasProperty(BluetoothGattCharacteristic.PROPERTY_WRITE)) {
+            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
         } else {
-            target.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        }
+        val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            activeGatt.writeCharacteristic(target, command, writeType) == BluetoothStatusCodes.SUCCESS
+        } else {
+            target.writeType = writeType
             target.value = command
             activeGatt.writeCharacteristic(target)
         }
@@ -211,6 +221,13 @@ class AndroidBleTransport(
                     _connected.value = false
                     servicesReady?.takeIf { it.isActive }
                         ?.completeExceptionally(BleDisconnectedException())
+                    // Release the client interface on drop so reconnects don't leak
+                    // GATT client slots (Fix 2). Only close the interface this
+                    // callback belongs to, and clear the field if it's still ours.
+                    gatt.close()
+                    if (this@AndroidBleTransport.gatt === gatt) {
+                        this@AndroidBleTransport.gatt = null
+                    }
                 }
             }
         }

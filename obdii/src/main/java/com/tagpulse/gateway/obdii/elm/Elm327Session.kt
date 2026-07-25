@@ -1,7 +1,9 @@
 package com.tagpulse.gateway.obdii.elm
 
 import com.tagpulse.gateway.obdii.ble.BleDisconnectedException
+import com.tagpulse.gateway.obdii.ble.BleException
 import com.tagpulse.gateway.obdii.ble.BleTransport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
@@ -55,6 +57,8 @@ class Elm327Session(
         _state.value = ConnectionState.Connecting
         try {
             transport.connect()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             fail(ObdError.DISCONNECTED, "connect failed: ${e.message}")
             throw Elm327Exception("BLE connect failed", e)
@@ -71,6 +75,11 @@ class Elm327Session(
         } catch (e: BleDisconnectedException) {
             fail(ObdError.DISCONNECTED, "link dropped during handshake")
             throw Elm327Exception("link dropped during handshake", e)
+        } catch (e: BleException) {
+            // Any other transport-level failure (e.g. a rejected write) must still
+            // land the session on Error — never leak uncaught, leaving Handshaking.
+            fail(ObdError.LINK_ERROR, "handshake failed: ${e.message}")
+            throw Elm327Exception("handshake failed", e)
         }
         _state.value = ConnectionState.Ready
     }
@@ -111,6 +120,11 @@ class Elm327Session(
             } else {
                 RpmReading.Failure(ObdError.DISCONNECTED)
             }
+        } catch (e: BleException) {
+            // A non-disconnect transport failure (e.g. a rejected/unsupported write)
+            // is a clean per-command failure — readRpm() must NOT throw. Not retried:
+            // a rejected write is typically persistent, not transient.
+            RpmReading.Failure(ObdError.LINK_ERROR)
         }
 
     /** Single reconnect + re-handshake attempt (plan §6). */
@@ -118,6 +132,9 @@ class Elm327Session(
         transport.connect()
         for (command in HANDSHAKE) exchange(command)
         true
+    } catch (e: CancellationException) {
+        // Never swallow structured-concurrency cancellation.
+        throw e
     } catch (e: Exception) {
         false
     }

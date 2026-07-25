@@ -397,10 +397,24 @@ the `PidCodec` + core contracts are the reusable, portable parts.
   release footprint acceptance; deliberately out of M0 scope to avoid an untested release
   path). Doc-accuracy fixes applied in a round-2 cleanup (serialization dependency line,
   145 component schemas vs 148 generated files, footprint claim marked `unverified`).
-- **Diff-stage rubber-duck (M1 implementation, `feat/m1-ble-rpm`):** **pending** — the
-  post-implement gate is green (`./gradlew lintDebug testDebugUnitTest assembleDebug` →
-  BUILD SUCCESSFUL; 20 unit tests, `failures=0 errors=0`) and the diff is ready for the
-  stage-3 `verifier` + code-review pass. HIL RPM-from-hardware is a manual check (out of CI).
+- **Diff-stage rubber-duck (M1 implementation, `feat/m1-ble-rpm` / PR #5):** **ran** on the
+  M1 code diff. `verifier` verdict **"M1 conforms"** (gate green). Code-review found **2 real
+  hardware-path bugs** — both **fixed in round-2**: (1) HIGH — `AndroidBleTransport.write()`
+  can throw a *generic* `BleException` (rejected/unresolved write), which `Elm327Session`'s
+  handshake loop + `requestRpm()` didn't catch → state stuck at Handshaking/Reading and
+  `readRpm()` threw (violating its "never throws for a per-command problem" contract); now
+  a `catch (BleException)` in both spots maps to `ObdError.LINK_ERROR` (state → Error;
+  `readRpm()` never throws). (2) MED — `BluetoothGatt` leak: the `STATE_DISCONNECTED`
+  callback + `reconnect()`'s bare `connect()` never closed the prior GATT → client-slot
+  exhaustion on flaky links; now `gatt.close()` on drop + close-before-assign in `connect()`.
+  Plus hardening: write-type chosen from the characteristic's actual properties
+  (`WRITE`→with-response, else `WRITE_TYPE_NO_RESPONSE`), and `reconnect()` rethrows
+  `CancellationException` (no swallowed cancellation). The unit gate stayed green pre-fix
+  because `FakeBleTransport` only threw `BleDisconnectedException`; round-2 extended it with
+  a generic-`BleException` hook (`throwOn`) + exercised the `dropAfter`/`connectCount`
+  reconnect path — **+3 `Elm327Session` tests** (generic-`BleException` on read + handshake;
+  drop→reconnect→recover). Gate green (23 unit tests, `failures=0 errors=0`). HIL
+  RPM-from-hardware remains a manual check.
 - **Diff-stage rubber-duck (this plan doc, docs-only):** n/a — this plan/proposal change is
   **docs-only**. Per AGENTS §6 the docs carve-out applies (no deps/CI/IaC/security/behavioral
   config touched), **but** this plan **gates** the Phase-0 implementation, which is *not*
