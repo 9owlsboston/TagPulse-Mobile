@@ -4,6 +4,7 @@ import android.util.Log
 import com.tagpulse.gateway.core.DiscoveredDevice
 import com.tagpulse.gateway.core.GatewayDriver
 import com.tagpulse.gateway.core.Observation
+import com.tagpulse.gateway.core.Subject
 import com.tagpulse.gateway.core.outbox.Outbox
 import com.tagpulse.gateway.core.relay.DrainReport
 import com.tagpulse.gateway.obdii.elm.ConnectionState
@@ -52,6 +53,7 @@ class ScanCoordinator(
     private val outbox: Outbox,
     private val relay: Relay,
     private val connectionState: StateFlow<ConnectionState>? = null,
+    private val boundSubject: () -> Subject? = { null },
 ) {
 
     private val _state = MutableStateFlow<ScanState>(ScanState.Idle)
@@ -73,6 +75,19 @@ class ScanCoordinator(
             return@coroutineScope
         }
         try {
+            // The bound vehicle (its canonical VIN) is captured ONCE here — the reads
+            // must carry it as tag_id (ledger C-RYH7 §6). If no vehicle is bound we fail
+            // and enqueue nothing (never fall back to the driver's placeholder subject),
+            // and capturing once means a concurrent re-bind can't relabel this scan.
+            val vehicle = boundSubject()
+            if (vehicle == null) {
+                _state.value = ScanState.Error(
+                    ScanState.ErrorKind.CREDENTIAL,
+                    "No vehicle bound — bind a vehicle before scanning.",
+                )
+                return@coroutineScope
+            }
+
             _state.value = ScanState.Connecting
 
             val device = discoverOrFail() ?: return@coroutineScope
@@ -97,7 +112,7 @@ class ScanCoordinator(
                 // Attach the one-shot GPS fix (plan §4). A missing fix is not an error —
                 // the read still relays; the mapper renders a present fix to Location(source=gps).
                 val fix = currentFixOrNull()
-                val located = observation.copy(location = fix)
+                val located = observation.copy(subject = vehicle, location = fix)
                 outbox.enqueue(located)
 
                 _state.value = ScanState.Relaying

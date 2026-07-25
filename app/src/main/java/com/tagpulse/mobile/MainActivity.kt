@@ -20,6 +20,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.tagpulse.mobile.bind.BindState
+import com.tagpulse.mobile.bind.VehicleBindingCoordinator
 import com.tagpulse.mobile.di.AppContainer
 import com.tagpulse.mobile.enrol.EnrolState
 import com.tagpulse.mobile.enrol.EnrolmentCoordinator
@@ -64,13 +66,30 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AppRoot(container: AppContainer) {
     val enrolState by container.enrolmentCoordinator.state.collectAsState()
+    val bindState by container.vehicleBindingCoordinator.state.collectAsState()
     val enrolled = enrolState is EnrolState.Enrolled || container.isEnrolled
+    val bound = bindState is BindState.Bound || container.isBound
 
-    if (enrolled) {
-        ScanRoute(coordinator = container.scanCoordinator)
-    } else {
-        EnrolRoute(coordinator = container.enrolmentCoordinator, state = enrolState)
+    when {
+        !enrolled -> EnrolRoute(coordinator = container.enrolmentCoordinator, state = enrolState)
+        !bound -> BindRoute(coordinator = container.vehicleBindingCoordinator, state = bindState)
+        else -> ScanRoute(coordinator = container.scanCoordinator)
     }
+}
+
+/**
+ * Binds the [VehicleBindingCoordinator] to [com.tagpulse.mobile.ui.BindScreen] (ledger
+ * `C-RYH7` Increment 2a): resolve a keyed VIN, then confirm the returned plate. Manual VIN
+ * entry only in 2a (OBD-II Mode 09 auto-read = 2b; VIN barcode = 2c).
+ */
+@Composable
+private fun BindRoute(coordinator: VehicleBindingCoordinator, state: BindState) {
+    val scope = rememberCoroutineScope()
+    com.tagpulse.mobile.ui.BindScreen(
+        state = state,
+        onResolve = { vin -> scope.launch { coordinator.resolve(vin) } },
+        onConfirm = { coordinator.confirm() },
+    )
 }
 
 /**

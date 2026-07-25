@@ -44,6 +44,22 @@ interface BackendClient {
         name: String,
         deviceType: String = "mobile_gateway",
     ): ProvisionResult
+
+    /**
+     * Resolve a vehicle **binding value** (a canonical VIN) to its asset via
+     * `GET {baseUrl}/assets/by-binding?value=<vin>` with `Authorization: Bearer <tp_ key>`
+     * (ledger `C-RYH7` Increment 2a; backend `I-P923`). The response's `display_label` is
+     * the vehicle's **plate**, shown to the operator for confirmation; the caller keys the
+     * binding on the canonical VIN it sends as `tag_id`.
+     *
+     * Maps the HTTP result to an [AssetLookupResult]:
+     * - `200 {id, display_label}` → [AssetLookupResult.Resolved]
+     * - `404` → [AssetLookupResult.NotFound] (unknown VIN — **not** retryable)
+     * - `401`/`403` → [AssetLookupResult.CredentialError]
+     * - `5xx`/`408`/`429`/network → [AssetLookupResult.Retryable]
+     * - other `4xx` → [AssetLookupResult.Terminal]
+     */
+    suspend fun resolveAssetByBinding(value: String): AssetLookupResult
 }
 
 /** Outcome of a `POST /tag-reads/batch` relay. */
@@ -73,4 +89,25 @@ sealed interface ProvisionResult {
 
     /** Any non-2xx (e.g. `401` invalid provisioning key) or transport failure. */
     data class Failed(val statusCode: Int?, val reason: String) : ProvisionResult
+}
+
+/** Outcome of a `GET /assets/by-binding` VIN→asset lookup (Increment 2a). */
+sealed interface AssetLookupResult {
+    /**
+     * `200` — the binding resolved to an asset. [displayLabel] is the vehicle's plate
+     * (`display_label`), possibly `null` if the backend has none on file.
+     */
+    data class Resolved(val assetId: String, val displayLabel: String?) : AssetLookupResult
+
+    /** `404` — no active binding for that value (unknown VIN). Not retryable. */
+    data object NotFound : AssetLookupResult
+
+    /** `401`/`403` — the ingest credential is missing/invalid/unauthorized. */
+    data class CredentialError(val reason: String) : AssetLookupResult
+
+    /** Transient (`5xx`/`408`/`429`/network) — safe to retry. */
+    data class Retryable(val reason: String) : AssetLookupResult
+
+    /** Non-retryable client error (other `4xx`, or an unparseable `200`). */
+    data class Terminal(val statusCode: Int, val reason: String) : AssetLookupResult
 }

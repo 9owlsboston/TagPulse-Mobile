@@ -62,12 +62,14 @@ class ScanCoordinatorTest {
         location: LocationProvider = FixedLocationProvider(fix),
         relay: Relay = FakeRelay(),
         connectionState: MutableStateFlow<ConnectionState>? = null,
+        boundSubject: () -> com.tagpulse.gateway.core.Subject? = { BOUND_VEHICLE },
     ) = ScanCoordinator(
         driver = driver,
         locationProvider = location,
         outbox = outbox,
         relay = relay,
         connectionState = connectionState,
+        boundSubject = boundSubject,
     )
 
     @Test
@@ -209,6 +211,7 @@ class ScanCoordinatorTest {
             locationProvider = FixedLocationProvider(fix),
             outbox = throwingOutbox,
             relay = FakeRelay(),
+            boundSubject = { BOUND_VEHICLE },
         )
 
         coordinator.scan() // must return normally (no exception propagates)
@@ -233,7 +236,41 @@ class ScanCoordinatorTest {
         assertEquals(1, outbox.pending().size)
     }
 
+    @Test
+    fun `scan fails with no vehicle bound and enqueues nothing`() = runTest {
+        val coordinator = coordinator(boundSubject = { null })
+
+        coordinator.scan()
+        advanceUntilIdle()
+
+        val state = coordinator.state.value
+        assertTrue("expected Error, was $state", state is ScanState.Error)
+        assertEquals(ScanState.ErrorKind.CREDENTIAL, (state as ScanState.Error).kind)
+        assertEquals(0, outbox.pending().size)
+    }
+
+    @Test
+    fun `the bound vehicle VIN overrides the observation subject on enqueue`() = runTest {
+        // The driver's fake reports subject "vehicle-42"; the bound VIN must win as tag_id.
+        val coordinator = coordinator(
+            driver = FakeGatewayDriver(subjectId = "vehicle-42"),
+            boundSubject = { BOUND_VEHICLE },
+        )
+
+        coordinator.scan()
+        advanceUntilIdle()
+
+        assertEquals(BOUND_VEHICLE.id, outbox.pending().single().subjectId)
+    }
+
     // -- helpers ---------------------------------------------------------------
+
+    private companion object {
+        val BOUND_VEHICLE = com.tagpulse.gateway.core.Subject(
+            com.tagpulse.gateway.core.SubjectKind.VEHICLE,
+            id = "1HGCM82633A004352",
+        )
+    }
 
     private fun kotlinx.coroutines.test.TestScope.collectStates(
         coordinator: ScanCoordinator,

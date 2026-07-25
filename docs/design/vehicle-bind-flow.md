@@ -1,0 +1,154 @@
+# Vehicle bind flow (VIN → asset) — design
+
+> **Summary.** After enrolment, the handset must be **bound to one vehicle** so its reads
+> Map-link to the right asset. This adds the **vehicle VIN-bind** flow (ledger `C-RYH7`,
+> Increment 2a): capture a **VIN**, validate it, **resolve it against the backend**
+> (`GET /assets/by-binding?value=<VIN>`) to fetch the vehicle asset + its **license plate**
+> (`display_label`) for operator confirmation, persist the binding, and stamp the canonical
+> VIN as the reads' `tag_id`. It replaces the `AppContainer` `DEFAULT_VEHICLE_BINDING_VALUE`
+> placeholder and gates the "Scan vehicle" screen behind a bound vehicle.
+
+Scope owner: `C-RYH7`. Backend contract: **shipped** (`I-P923`, TagPulse migration 062 /
+SHA `71ed1e6`; design `TagPulse:docs/design/asset-display-label-vin-lookup.md`). This is
+**product code + tests**; the live backend resolve + Map assertion are **HIL**.
+
+## Backend contract (verified against `~/ws/TagPulse` @ `71ed1e6`)
+
+- **`binding_kind='vin'`** is a **pure lookup handle** — matched by **none** of the
+  telemetry/Map SQL. The Map link (current-locations view) still resolves
+  `binding_kind='device' AND tr.tag_id = b.binding_value`. So a vehicle Map-links from the
+  handset's reads via an admin-set **`device`** binding whose value = the VIN, and the
+  handset reports **`tag_id = canonical VIN`**. (Admin setup of that binding is a
+  prerequisite, plan §5 — not the app's job.)
+- **`GET /assets/by-binding?value=<VIN>`** → `AssetResponse` (`200` with `id` +
+  `display_label` = plate) or `404`. **Kind-agnostic**, active bindings only, tenant-scoped,
+  `require_role("admin","editor","viewer")` — the handset calls it with its tenant `tp_` key.
+- **VIN canonicalization:** the backend canonicalizes a VIN (`strip().upper()`) and matches
+  raw + canonical; the handset sends the canonical form for stability.
+
+## Scope split
+
+- **Increment 2a (this doc):** capture VIN via **manual entry**, validate, resolve+confirm
+  (plate), persist, wire `tag_id`. Gate-green with fakes; live resolve/Map are HIL.
+- **Increment 2b:** OBD-II **Mode 09** auto-read (new multi-frame ISO-TP parsing; today
+  `PidCodec` is single-frame Mode 01) — the zero-touch capture tier.
+- **Increment 2c:** VIN **barcode** capture (reuses the Increment 1b ML Kit scanner for the
+  door-jamb Code 39 label). Windshield OCR remains deferred (OQ3).
+
+## What changes (Increment 2a)
+
+### 1. `Vin` — validation + canonicalization (pure)
+
+`Vin.canonical(raw)` = `raw.trim().uppercase()`. `Vin.isValid(canonical)` = **17 chars + the
+VIN alphabet (no `I`/`O`/`Q`)** — a **hard** gate. The **ISO-3779 check digit** (position 9)
+is computed as an **advisory** (`Vin.checkDigitValid`) only — it is **not** enforced, because
+it is mandatory only in North America and many legitimate non-NA VINs carry another character
+there; enforcing it would reject real vehicles (rubber-duck finding #2). The UI may *warn* on
+a failed check digit but still resolve; the backend resolve + plate confirmation is the
+authoritative check.
+
+### 2. `BackendClient.resolveAssetByBinding(value)` (core)
+
+New transport method — `GET {baseUrl}/assets/by-binding?value=<VIN>` with
+`Authorization: Bearer <tp_ key>`. Returns a typed outcome:
+`Resolved(assetId, displayLabel?)` (`200`), `NotFound` (`404`),
+`CredentialError` (`401`/`403`), `Retryable` (`5xx`/`408`/`429`/network), `Terminal`
+(other `4xx`). `404` is **not** retryable (a genuinely unknown VIN); `403` maps to
+credential, **not** network (rubber-duck contract fix). Thin-transport parse of a minimal
+`{id, display_label}` body (mirrors `parseProvisionBody`; the full `AssetResponse` is a
+generated model — re-vendoring `openapi.json` to `71ed1e6` is the proper follow-up, noted in
+`CONTRACT.md`). MockWebServer-tested.
+
+### 3. `VehicleBindingStore` (app)
+
+Persists the current binding — **canonical VIN**, **plate** (`display_label`), and `assetId`
+— in plain `SharedPreferences` (none are secrets; the secret `tp_` key stays in the Keystore).
+`current: VehicleBinding?`, `store(...)`, `clear()`.
+
+### 4. `VehicleBindingCoordinator` + `BindState` (app, mirrors `EnrolmentCoordinator`)
+
+`resolve(rawVin)`: canonicalize → `Vin.isValid` (else `Error(INPUT)`, no network) →
+`resolveAssetByBinding` → on `Resolved`: **require a non-blank plate** (`display_label`) —
+the plate *is* the operator's confirmation signal, so a blank one is an
+`Error(NO_PLATE)` telling the operator to ask an admin to set the plate (rubber-duck
+finding #4) — else `Confirming(vin, plate, assetId)`. `404` → `Error(NOT_FOUND)`;
+`401`/`403` → `Error(CREDENTIAL)`; retryable/terminal → `Error(NETWORK)`. `confirm()`:
+persist to `VehicleBindingStore` → `Bound`. `Mutex`-serialized; secret-free errors. Fakes-tested.
+
+> **Map-link limitation (documented).** A successful resolve confirms the vehicle's
+> **identity** (the plate), but does **not** prove the reads will Map-link: that requires an
+> admin-set `binding_kind='device'` binding whose value = the canonical VIN, and
+> `/assets/by-binding` is kind-agnostic (it could resolve a `vin`-only lookup binding). The
+> endpoint doesn't return the matched kind, so the app can't distinguish. The Map link is an
+> **admin-setup prerequisite verified in HIL** (`a7-map-check.py`). Backend follow-up (logged):
+> have `by-binding` return the matched `binding_kind` so the handset can warn on a `vin`-only
+> resolve.
+
+### 5. `BindScreen` (Compose) + routing
+
+VIN field + **Resolve** → shows the returned **plate** + a **Confirm this vehicle** button
+(operator visually confirms the plate matches). `MainActivity.AppRoot` gates:
+`!enrolled → EnrolRoute` → `!bound → BindRoute` → `ScanRoute`. Reactive on the coordinators'
+state (recompose, like enrolment).
+
+### 6. `ScanCoordinator` — stamp the bound VIN as `tag_id`
+
+Inject `boundSubject: () -> Subject?` (reads `VehicleBindingStore`). The bound subject is
+captured **once at scan start** (right after acquiring the scan `Mutex`); if it is **absent**
+the scan **fails** with `Error(CREDENTIAL)` ("no vehicle bound") and **nothing is enqueued** —
+there is **no fallback to the driver placeholder** (rubber-duck finding #3, which also removes
+the mid-scan-rebind relabel race). Otherwise the enqueue tail does
+`observation.copy(subject = capturedBoundSubject, location = fix)` so the relayed `tag_id` is
+the canonical VIN. Keeps the binding concern in the app layer (`:obdii` untouched).
+
+### 7. `AppContainer`
+
+Wire `VehicleBindingStore` + `VehicleBindingCoordinator`; pass `boundSubject` to
+`ScanCoordinator`; expose `isBound`. `DEFAULT_VEHICLE_BINDING_VALUE` becomes a fallback only.
+
+## Security
+
+VIN + plate are not secrets (plain prefs OK). The resolve call carries the `tp_` key in the
+`Authorization` header only (never logged, never in a `BindState.Error`). Errors are
+secret-free and operator-actionable.
+
+## Tests (JVM, fakes — gate)
+
+`VinTest` (valid/invalid alphabet, length, check digit, canonicalization); `resolveAssetByBinding`
+MockWebServer (`200` parse, `404`, `401`, `5xx`); `VehicleBindingCoordinatorTest` (resolve→confirm
+persists; invalid VIN → INPUT no network; 404 → NOT_FOUND; credential/network errors); a
+`ScanCoordinator` test that the bound VIN overrides the subject on enqueue.
+
+## Verification & HIL
+
+Gate: `./gradlew :app:lintDebug :app:testDebugUnitTest :gateway-core:testDebugUnitTest
+assembleDebug`. **HIL:** the live `by-binding` resolve + the end-to-end
+enrol→bind→scan→Map against a dev tenant (`scripts/e2e/a7-map-check.py`, extended for the VIN
+binding). **Increment 2b/2c** (Mode 09, barcode) are staged.
+
+## Review attestations
+
+- **Plan-stage rubber-duck:** **ran → 4 blocking findings + 1 contract fix**, all folded in:
+  (1) a successful resolve does **not** prove Map-linkability (kind-agnostic endpoint) →
+  documented limitation + a backend follow-up ask (return the matched `binding_kind`);
+  (2) the **ISO-3779 check digit is advisory, not enforced** (would reject legitimate
+  non-NA VINs) — `Vin.isValid` is length + alphabet only; (3) the `ScanCoordinator` captures
+  the bound subject **once at scan start** and **fails** if absent (no placeholder fallback,
+  no mid-scan-rebind relabel); (4) a resolved vehicle with a **blank plate** is an
+  `Error(NO_PLATE)` (the plate is the confirmation signal); + the contract fix (`403`→credential,
+  `404` non-retryable).
+- **Diff-stage rubber-duck (code-review):** **ran → no blocking issues.** Independently
+  verified the `by-binding` URL-encoding (single-encoded, `Bearer` auth), the status mapping,
+  the `AppContainer` initializer order (`backendClient` precedes `vehicleBindingCoordinator` +
+  `drainer` — no forward reference), the `Mutex` release on every path, the `confirm()` no-op
+  safety, the VIN check-digit (`1HGCM82633A004352` → `3`), secret hygiene, and the Map-link
+  honesty.
+- **Verification:** `:app:testDebugUnitTest` (**47**, incl. **+7** `Vin` + **+7**
+  `VehicleBindingCoordinator` + **+2** `ScanCoordinator` bound/unbound) +
+  `:gateway-core:testDebugUnitTest` (**58**, incl. **+7** `resolveAssetByBinding`) green;
+  `:app:lintDebug` clean; `assembleDebug` built. `failures=0 errors=0`.
+- **HIL (not run here):** the live `by-binding` resolve + the end-to-end
+  enrol→bind→scan→Map against a dev tenant (`scripts/e2e/a7-map-check.py`, to be extended for
+  the VIN binding + the admin-set `binding_kind='device'` binding). **Increment 2b** (OBD-II
+  Mode 09 auto-read) and **2c** (VIN barcode) are staged.
+- **current-state:** updated (the handset can now bind a vehicle by VIN; the placeholder is gone).

@@ -22,16 +22,15 @@ and the **Phase-0 MVE is code-complete — M0–M5 all merged**. The Android app
 green-zone slice: tap **"Scan vehicle"** → BLE-connect an ELM327 dongle → read a 4-PID
 snapshot → `normalize()` → attach a GPS fix → durable Room outbox → drain as a batched
 `POST /tag-reads/batch` (Keystore-backed tenant-key auth, at-least-once), surfaced on a
-Compose screen. The handset is **enrolled** against a tenant first — a `device_id` is
-provisioned and the `baseUrl` + `tp_` ingest key land in the Keystore (ledger `C-RYH7`
-Increment 1) — the "Scan vehicle" screen is gated behind enrolment. Fully unit-tested (BLE
-fake + Robolectric + OkHttp MockWebServer + coordinator/enrolment tests). **Remaining before
-it's demonstrably live: hardware-in-the-loop (HIL)** — a real BLE dongle, real GPS, real
-Keystore creds, and the live A6/A7 against a running dev tenant (a runnable, backend-validated
-E2E script exists at `scripts/e2e/a7-map-check.py`), plus the **vehicle VIN-bind** (Increment 2
-— OBD-II Mode 09 + VIN barcode + plate label, backend-gated on the `binding_value = VIN`
-convention). The enrolment **QR scanner** (Increment 1b — CameraX + ML Kit) is built; camera
-decode is HIL.
+Compose screen. The handset is **enrolled** against a tenant, then **bound to one vehicle by
+VIN** — the reads carry the canonical VIN as `tag_id`, and the vehicle's plate
+(`display_label`) is confirmed at bind (ledger `C-RYH7` Increments 1 + 2a) — the scan screen
+is gated behind enrolment + a bound vehicle. Fully unit-tested (BLE fake + Robolectric + OkHttp
+MockWebServer + coordinator/enrolment/bind tests). **Remaining before it's demonstrably live:
+hardware-in-the-loop (HIL)** — a real BLE dongle, real GPS, real Keystore creds, the live
+VIN resolve, and the A6/A7 enrol→bind→scan→Map against a running dev tenant (a runnable,
+backend-validated E2E script exists at `scripts/e2e/a7-map-check.py`); plus the OBD-II **Mode 09
+VIN auto-read** (Increment 2b) + **VIN barcode** (Increment 2c) capture tiers.
 
 ## Diagram
 
@@ -53,13 +52,17 @@ One line per area, each linking to the doc that owns the detail.
   `Drainer` → `POST /tag-reads/batch`, at-least-once), and the `:app` **"Scan vehicle" Compose
   UI + GPS + composition root** wiring it end-to-end, plus the **handset↔tenant enrolment
   flow** (`app/enrol` `EnrolmentCoordinator` + `EnrolScreen`, Keystore-persisted `baseUrl`;
-  ledger `C-RYH7` Increment 1) gating the scan screen, and an enrolment **QR scanner**
-  (Increment 1b — CameraX + ML Kit bundled; camera decode HIL). MVE acceptance: **A1–A5
-  code-complete** (real creds/backend HIL), **A6/A7 HIL** (+ runnable `scripts/e2e/a7-map-check.py`),
-  **A8 gate green**. Next: the **vehicle VIN-bind** (Increment 2, backend-gated) + real-device
-  **HIL** (ledger `C-RYH7`); then the Phase-1+ roadmap. See
-  [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md) and
-  [`docs/design/enrolment-flow.md`](design/enrolment-flow.md).
+  ledger `C-RYH7` Increment 1) gating the scan screen, an enrolment **QR scanner**
+  (Increment 1b — CameraX + ML Kit bundled; camera decode HIL), and a **vehicle VIN-bind**
+  flow (`app/bind` `Vin` + `VehicleBindingCoordinator` + `BindScreen`; resolve VIN →
+  `GET /assets/by-binding` → confirm plate → reads carry the canonical VIN as `tag_id`;
+  ledger `C-RYH7` Increment 2a, backend `I-P923`). MVE acceptance: **A1–A5 code-complete**
+  (real creds/backend HIL), **A6/A7 HIL** (+ runnable `scripts/e2e/a7-map-check.py`),
+  **A8 gate green**. Next: OBD-II **Mode 09 VIN auto-read** (Increment 2b) + **VIN barcode**
+  (Increment 2c) + real-device **HIL** (ledger `C-RYH7`); then the Phase-1+ roadmap. See
+  [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md),
+  [`docs/design/enrolment-flow.md`](design/enrolment-flow.md), and
+  [`docs/design/vehicle-bind-flow.md`](design/vehicle-bind-flow.md).
 - **Backend contract** — consumed as-is from TagPulse `openapi.json`; **zero backend change**
   needed for the Phase-0 MVE (backend asks `I-75YC`/`I-9HQA`/`I-K6D1` are post-MVE).
 
