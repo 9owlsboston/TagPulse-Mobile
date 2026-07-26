@@ -19,11 +19,13 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * The OBD-II [GatewayDriver] — the first (and, for the MVE, only) modality driver.
  *
- * **M1 scope:** BLE connect → ELM327 handshake → read **RPM (`010C`) only** → log
- * it. `discover()` / `read()` are wired just enough to exercise that path; the
- * heavy lifting lives behind the testable [Elm327Session] / [BleTransport] seam
- * (plan `docs/design/obdii-mve-plan.md` §3, §6). [normalize] stays a TODO until
- * M2 (PID codec → `sensor_data` snapshot → [Observation]).
+ * **Read path:** BLE connect → ELM327 handshake → read the **four-PID snapshot**
+ * (`010C`/`010D`/`0105`/`012F`) → [normalize] it onto the core [Observation]
+ * (`sensor_data`; plan `docs/design/obdii-mve-plan.md` §3/§4). [readVin] additionally
+ * reads the vehicle **VIN** over Mode 09 (`0902`) for the bind flow (ledger `C-RYH7`
+ * Increment 2b). `discover()` / `read()` are thin; the heavy lifting lives behind the
+ * testable [Elm327Session] / [BleTransport] seam, so the whole driver is unit-tested with
+ * a scriptable fake — the real BLE path is HIL (plan §6).
  *
  * Construct with a [session] for real / test use (see [create] and
  * [forAndroid]); the no-arg form exists only for scaffold smoke tests that check
