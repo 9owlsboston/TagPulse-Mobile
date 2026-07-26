@@ -60,7 +60,8 @@ One line per area, each linking to the doc that owns the detail.
   ledger `C-RYH7` Increment 2a, backend `I-P923`). MVE acceptance: **A1–A5 code-complete**
   (real creds/backend HIL), **A6/A7 HIL** (+ runnable `scripts/e2e/a7-map-check.py`),
   **A8 gate green**. Next: real-device **HIL** end-to-end (ledger `C-RYH7` — enrol → bind →
-  scan → Map on a handset); then the Phase-1+ roadmap. See
+  scan → Map on a handset; runbook: [`docs/guides/hil-runbook.md`](guides/hil-runbook.md));
+  then the Phase-1+ roadmap. See
   [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md),
   [`docs/design/enrolment-flow.md`](design/enrolment-flow.md), and
   [`docs/design/vehicle-bind-flow.md`](design/vehicle-bind-flow.md).
