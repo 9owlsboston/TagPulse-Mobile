@@ -196,6 +196,7 @@ class OkHttpBackendClient(
                 AssetLookupResult.Resolved(
                     assetId = assetId,
                     displayLabel = (parsed["display_label"] as? String)?.takeIf { it.isNotBlank() },
+                    bindingKind = (parsed["binding_kind"] as? String)?.takeIf { it.isNotBlank() },
                 )
             }
         } catch (e: Exception) {

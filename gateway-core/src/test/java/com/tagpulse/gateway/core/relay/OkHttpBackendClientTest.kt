@@ -208,12 +208,15 @@ class OkHttpBackendClientTest {
     fun `resolveAssetByBinding 200 parses asset id and plate, sends bearer + encoded value`() = runBlocking {
         server.enqueue(
             MockResponse().setResponseCode(200)
-                .setBody("""{"id":"asset-9","display_label":"MASS-1234","name":"Van 9"}"""),
+                .setBody("""{"id":"asset-9","display_label":"MASS-1234","binding_kind":"device","name":"Van 9"}"""),
         )
 
         val result = client.resolveAssetByBinding("1HGCM82633A004352")
 
-        assertEquals(AssetLookupResult.Resolved(assetId = "asset-9", displayLabel = "MASS-1234"), result)
+        assertEquals(
+            AssetLookupResult.Resolved(assetId = "asset-9", displayLabel = "MASS-1234", bindingKind = "device"),
+            result,
+        )
         val recorded = server.takeRequest()
         assertEquals("GET", recorded.method)
         assertEquals("/assets/by-binding?value=1HGCM82633A004352", recorded.path)
@@ -231,7 +234,7 @@ class OkHttpBackendClientTest {
     fun `resolveAssetByBinding 200 with blank plate yields null displayLabel`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"id":"a","display_label":""}"""))
         val result = client.resolveAssetByBinding("v")
-        assertEquals(AssetLookupResult.Resolved(assetId = "a", displayLabel = null), result)
+        assertEquals(AssetLookupResult.Resolved(assetId = "a", displayLabel = null, bindingKind = null), result)
     }
 
     @Test

@@ -95,9 +95,16 @@ sealed interface ProvisionResult {
 sealed interface AssetLookupResult {
     /**
      * `200` — the binding resolved to an asset. [displayLabel] is the vehicle's plate
-     * (`display_label`), possibly `null` if the backend has none on file.
+     * (`display_label`), possibly `null` if the backend has none on file. [bindingKind]
+     * is the **matched** binding's kind (`device`/`epc`/`tid`/`vin`; `I-WAPN`) — only a
+     * `device` binding Map-links the handset's `tag_id = VIN` reads, so any other kind is
+     * a warning signal.
      */
-    data class Resolved(val assetId: String, val displayLabel: String?) : AssetLookupResult
+    data class Resolved(
+        val assetId: String,
+        val displayLabel: String?,
+        val bindingKind: String?,
+    ) : AssetLookupResult
 
     /** `404` — no active binding for that value (unknown VIN). Not retryable. */
     data object NotFound : AssetLookupResult

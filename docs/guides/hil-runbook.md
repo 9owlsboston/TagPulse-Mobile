@@ -43,7 +43,8 @@ makes the Map link resolve.
      → **the `GET /assets/by-binding` lookup handle** the handset resolves for the plate.
    > ⚠️ Both bindings use the **same canonical (upper-case) VIN**. Without the **`device`**
    > binding the reads will **not** Map-link even though the bind "succeeds" (the handset can't
-   > yet detect this — ledger **I-WAPN**). `a7-map-check.py` seeds the `device` binding for you
+   > now **warns** at bind-confirm when the resolved binding isn't `device` — ledger **I-WAPN**,
+> closed). `a7-map-check.py` seeds the `device` binding for you
    > if you only want to test the backend half.
 3. *(Optional)* **Make an enrolment QR** for Part C: encode the URI
    `tagpulse://enrol?base=<url-encoded https baseUrl>&pkey=<provisioning key>` as a QR image.
@@ -128,7 +129,7 @@ VIN set in Part A.2.)
 |---|---|
 | Enrol / scan returns a **credential error** | Bad/expired `tp_` key, or `baseUrl` wrong → re-enrol (the app surfaces this, `C-5EHY`). |
 | **Read VIN from vehicle** fails | Vehicle doesn't support Mode 09 `0902` (legacy/non-CAN) → use **Scan barcode** or **type** the VIN. |
-| VIN **resolves** but the read **isn't on the Map** | The vehicle is missing the **`binding_kind='device'`** binding = VIN (only the `vin` lookup binding exists). Add it (Part A.2). The handset can't detect this yet — **I-WAPN**. |
+| VIN **resolves** but the read **isn't on the Map** | The vehicle is missing the **`binding_kind='device'`** binding = VIN (only the `vin` lookup binding exists). Add it (Part A.2). The bind screen **warns** when the resolved binding isn't `device` (I-WAPN) — heed the warning. |
 | **No vehicle bound** error on scan | Bind a vehicle first (Part D) — scanning requires a bound VIN (no placeholder). |
 | Relay parks rows **FAILED** | Terminal `4xx` (bad payload) or exhausted retries; `429`/`408`/`5xx` are retried/deferred. Check backend logs. |
 | Handset can't reach the backend | Use the host **LAN IP** + `https://`; confirm same network + reachable port. |
@@ -139,5 +140,5 @@ VIN set in Part A.2.)
   [`enrolment-flow.md`](../design/enrolment-flow.md), [`vehicle-bind-flow.md`](../design/vehicle-bind-flow.md).
 - Backend E2E: [`scripts/e2e/a7-map-check.py`](../../scripts/e2e/a7-map-check.py) + its
   [`README`](../../scripts/e2e/README.md).
-- Open backend follow-up: **I-WAPN** — have `GET /assets/by-binding` return the matched
-  `binding_kind` so the handset can warn on a `vin`-only resolve (no `device` binding).
+- **I-WAPN (closed):** `GET /assets/by-binding` returns the matched `binding_kind`, so the
+  bind screen warns when a VIN resolves via a non-`device` (lookup-only) binding.

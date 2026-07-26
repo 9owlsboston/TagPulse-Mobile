@@ -138,7 +138,9 @@ private fun StatusCard(state: BindState, modifier: Modifier = Modifier) {
 
             when (state) {
                 is BindState.Confirming -> Text(
-                    text = "Plate on file: ${state.plate}. Confirm it matches the vehicle.",
+                    text = state.warning?.let { "$it\n\nPlate on file: ${state.plate}. Confirm it matches the vehicle." }
+                        ?: "Plate on file: ${state.plate}. Confirm it matches the vehicle.",
+                    color = if (state.warning != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 is BindState.Bound -> Text(

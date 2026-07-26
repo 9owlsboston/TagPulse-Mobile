@@ -25,8 +25,16 @@ sealed interface BindState {
      * @property vin the canonical VIN.
      * @property plate the resolved plate (`display_label`) — shown for confirmation.
      * @property assetId the resolved asset id.
+     * @property warning non-null when the resolved binding is **not** an operational
+     *   `device` binding (`I-WAPN`) — the reads may not Map-link; shown to the operator,
+     *   who can still confirm (the signal is advisory, not definitive).
      */
-    data class Confirming(val vin: String, val plate: String, val assetId: String) : BindState
+    data class Confirming(
+        val vin: String,
+        val plate: String,
+        val assetId: String,
+        val warning: String? = null,
+    ) : BindState
 
     /** The operator confirmed; the binding is persisted. */
     data class Bound(val vin: String, val plate: String) : BindState

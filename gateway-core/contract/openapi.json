@@ -286,6 +286,134 @@
         "title": "ApiKeyResponse",
         "type": "object"
       },
+      "AssetByBindingResponse": {
+        "description": "Asset resolved via ``GET /assets/by-binding`` (I-WAPN).\n\nExtends :class:`AssetResponse` with the **matched** binding so the handset\ncan warn when a VIN resolves via a ``vin`` binding (a lookup-only handle that\ndoes not Map-link tag-reads) rather than an operational ``device``/``epc``/\n``tid`` binding.",
+        "properties": {
+          "binding_kind": {
+            "title": "Binding Kind",
+            "type": "string"
+          },
+          "binding_value": {
+            "title": "Binding Value",
+            "type": "string"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Label"
+          },
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "latest_telemetry": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/LatestTelemetryEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Telemetry"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Asset Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "external_ref",
+          "name",
+          "status",
+          "parent_asset_id",
+          "category_id",
+          "created_at",
+          "updated_at",
+          "binding_kind",
+          "binding_value"
+        ],
+        "title": "AssetByBindingResponse",
+        "type": "object"
+      },
       "AssetCreate": {
         "description": "Create an asset.\n\nSprint 41 Phase H (ADR 019 close-out): ``category_id`` is now\n**required** \u2014 every asset must point at a Category. The legacy\n``asset_type`` String field has been dropped.",
         "properties": {
@@ -293,6 +421,18 @@
             "format": "uuid",
             "title": "Category Id",
             "type": "string"
+          },
+          "display_label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Label"
           },
           "external_ref": {
             "anyOf": [
@@ -871,6 +1011,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "display_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Label"
+          },
           "external_ref": {
             "anyOf": [
               {
@@ -1123,7 +1274,8 @@
             "enum": [
               "epc",
               "tid",
-              "device"
+              "device",
+              "vin"
             ],
             "title": "Binding Kind",
             "type": "string"
@@ -1254,6 +1406,18 @@
               }
             ],
             "title": "Category Id"
+          },
+          "display_label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Label"
           },
           "external_ref": {
             "anyOf": [
@@ -2154,6 +2318,121 @@
         "title": "DeviceHealthSummary",
         "type": "object"
       },
+      "DeviceLocationCreate": {
+        "description": "`POST /device-location` body \u2014 a device's own position, or a relay for a granted subject.\n\nExtends :class:`ExternalLocationCreate` with an **optional** target subject. Both fields\nomitted (the default) records the calling device's own position (``subject_kind='device'``,\nunchanged self behavior). Supplying **both** relays the position for that subject \u2014 allowed only\nwhen the calling gateway holds an active grant for it (C-4Z66). A lone ``subject_kind`` or\n``subject_id`` is rejected (a target needs both).",
+        "properties": {
+          "accuracy_meters": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy Meters"
+          },
+          "heading_deg": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 360.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading Deg"
+          },
+          "latitude": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Longitude",
+            "type": "number"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "speed_kph": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Kph"
+          },
+          "subject_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Id"
+          },
+          "subject_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "device",
+                  "asset",
+                  "lot",
+                  "stock_item",
+                  "zone"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Kind"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "recorded_at",
+          "source"
+        ],
+        "title": "DeviceLocationCreate",
+        "type": "object"
+      },
       "DeviceResponse": {
         "description": "Device returned from the API.",
         "properties": {
@@ -2537,9 +2816,16 @@
             "title": "Accuracy Meters"
           },
           "asset_id": {
-            "format": "uuid",
-            "title": "Asset Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
           },
           "heading_deg": {
             "anyOf": [
@@ -2597,6 +2883,29 @@
             ],
             "title": "Speed Kph"
           },
+          "subject_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Id"
+          },
+          "subject_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Kind"
+          },
           "tenant_id": {
             "format": "uuid",
             "title": "Tenant Id",
@@ -2606,7 +2915,6 @@
         "required": [
           "id",
           "tenant_id",
-          "asset_id",
           "recorded_at",
           "latitude",
           "longitude",
@@ -2818,6 +3126,102 @@
           }
         },
         "title": "FusionStrategy",
+        "type": "object"
+      },
+      "GatewaySubjectGrantCreate": {
+        "description": "Admin request to grant a gateway relay authority for a subject (C-6S9H).",
+        "properties": {
+          "subject_id": {
+            "format": "uuid",
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "subject_kind": {
+            "enum": [
+              "asset",
+              "device",
+              "lot",
+              "stock_item",
+              "zone"
+            ],
+            "title": "Subject Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject_kind",
+          "subject_id"
+        ],
+        "title": "GatewaySubjectGrantCreate",
+        "type": "object"
+      },
+      "GatewaySubjectGrantResponse": {
+        "description": "A gateway_subject_grants row.",
+        "properties": {
+          "gateway_device_id": {
+            "format": "uuid",
+            "title": "Gateway Device Id",
+            "type": "string"
+          },
+          "granted_at": {
+            "format": "date-time",
+            "title": "Granted At",
+            "type": "string"
+          },
+          "granted_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Granted By"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "subject_id": {
+            "format": "uuid",
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "subject_kind": {
+            "title": "Subject Kind",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "gateway_device_id",
+          "subject_kind",
+          "subject_id",
+          "granted_by",
+          "granted_at"
+        ],
+        "title": "GatewaySubjectGrantResponse",
         "type": "object"
       },
       "GeoAnchor": {
@@ -4557,6 +4961,40 @@
           "name"
         ],
         "title": "ProvisionRequest",
+        "type": "object"
+      },
+      "ProvisionResponse": {
+        "description": "Device self-registration result.\n\nCarries the freshly-minted per-device token (``tpd_\u2026``). It is returned\n**once** here \u2014 the backend stores only its SHA-256 hash and it cannot be\nre-read later (rotate via ``POST /device-registry/{id}/rotate-token``). The\ntoken is **inert until an admin approves the device** (``get_current_user``\nrequires ``status=\"active\"``).",
+        "properties": {
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "token_prefix": {
+            "title": "Token Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "status",
+          "token",
+          "token_prefix",
+          "message"
+        ],
+        "title": "ProvisionResponse",
         "type": "object"
       },
       "ProvisionStatusResponse": {
@@ -9479,6 +9917,177 @@
         ]
       }
     },
+    "/admin/gateways/{device_id}/subject-grants": {
+      "get": {
+        "description": "List a gateway's active subject grants (admin only).",
+        "operationId": "list_gateway_grants_admin_gateways__device_id__subject_grants_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GatewaySubjectGrantResponse"
+                  },
+                  "title": "Response List Gateway Grants Admin Gateways  Device Id  Subject Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List Gateway Grants",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Grant a gateway device relay authority for a subject (admin only).",
+        "operationId": "create_gateway_grant_admin_gateways__device_id__subject_grants_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewaySubjectGrantCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewaySubjectGrantResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Create Gateway Grant",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/gateways/{device_id}/subject-grants/{subject_kind}/{subject_id}": {
+      "delete": {
+        "description": "Revoke a gateway's active subject grant (admin only).",
+        "operationId": "revoke_gateway_grant_admin_gateways__device_id__subject_grants__subject_kind___subject_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subject_kind",
+            "required": true,
+            "schema": {
+              "title": "Subject Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subject_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subject Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Revoke Gateway Grant",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/tag-collisions": {
       "get": {
         "description": "Return cross-tenant collision count for a binding_value.\n\nPer docs/design/assets-and-zones.md \u00a711 Q3: returns only the count of\n*other* tenants with an active binding for this value, never their\nidentities. Increments ``tagpulse_tag_collisions_global_total``.",
@@ -10204,6 +10813,57 @@
           }
         ],
         "summary": "Create Asset",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/assets/by-binding": {
+      "get": {
+        "description": "Resolve an active binding value (e.g. a VIN) to its asset (I-P923/I-WAPN).\n\nDeclared before ``/{asset_id}`` so FastAPI doesn't capture ``by-binding`` as\na path param. The handset keys the Map link on the returned ``id`` and shows\n``display_label`` (the plate) for operator confirmation. The response also\ncarries the **matched** ``binding_kind`` (+ ``binding_value``) so the handset\ncan warn when a VIN resolves via a lookup-only ``vin`` binding (no\n``device``/``epc``/``tid`` binding \u21d2 reads won't Map-link).",
+        "operationId": "get_asset_by_binding_assets_by_binding_get",
+        "parameters": [
+          {
+            "description": "Active binding value to resolve \u2014 e.g. a scanned/keyed VIN (binding_kind='vin'). Kind-agnostic; matches the raw + canonical (upper) form. Tenant-scoped.",
+            "in": "query",
+            "name": "value",
+            "required": true,
+            "schema": {
+              "description": "Active binding value to resolve \u2014 e.g. a scanned/keyed VIN (binding_kind='vin'). Kind-agnostic; matches the raw + canonical (upper) form. Tenant-scoped.",
+              "minLength": 1,
+              "title": "Value",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetByBindingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Asset By Binding",
         "tags": [
           "assets"
         ]
@@ -12227,6 +12887,53 @@
         ]
       }
     },
+    "/device-location": {
+      "post": {
+        "description": "Record a device's own external position, or relay one for a granted subject.\n\nDevice principals only. With no target subject the row is the calling device's own\n(``('device', device_id)``, unchanged). With a target ``(subject_kind, subject_id)`` the write\nis allowed iff it is the own device subject **or** an active admin grant authorizes it (C-4Z66),\nexactly mirroring the telemetry-ingest guard (I-75YC). ``recorded_at`` must fall inside the\ningest clock window.",
+        "operationId": "record_device_location_device_location_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceLocationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalLocationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Record Device Location",
+        "tags": [
+          "device-location"
+        ]
+      }
+    },
     "/device-registry": {
       "get": {
         "description": "List devices with optional filters.",
@@ -12719,7 +13426,7 @@
     },
     "/devices/provision": {
       "post": {
-        "description": "Self-register a device using a tenant provisioning key.",
+        "description": "Self-register a device using a tenant provisioning key.\n\nMints the device's per-device token in the same step and returns it once\n(copy-once). The device holds the token through the approval wait; it only\nauthenticates once an admin approves the device.",
         "operationId": "provision_device_devices_provision_post",
         "requestBody": {
           "content": {
@@ -12736,11 +13443,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Provision Device Devices Provision Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ProvisionResponse"
                 }
               }
             },
@@ -18386,7 +19089,7 @@
     },
     "/telemetry/readings/ingest": {
       "post": {
-        "description": "Direct subject-scoped telemetry write (admin/editor only).\n\nFor external systems publishing pre-resolved subject readings\n(e.g. a TMS pushing per-asset GPS speed). Bypasses the tag-borne\nfan-out path. Source defaults to ``\"external\"`` per the schema.\nEach persisted row is published as ``Topic.TELEMETRY_RECORDED`` so\nthe Sprint 20 ``telemetry.threshold`` rule path fires here too.",
+        "description": "Direct subject-scoped telemetry write (admin, editor, or device principal).\n\nFor external systems publishing pre-resolved subject readings\n(e.g. a TMS pushing per-asset GPS speed). Bypasses the tag-borne\nfan-out path. Source defaults to ``\"external\"`` per the schema.\nEach persisted row is published as ``Topic.TELEMETRY_RECORDED`` so\nthe Sprint 20 ``telemetry.threshold`` rule path fires here too.\n\nA **device** principal (I-75YC) may write its own device subject or any\nadmin-granted subject (C-6S9H); it is clock-validated and its\n``source``/``device_id`` are coerced to truthful relay provenance.\nAdmin/editor behavior is unchanged.",
         "operationId": "ingest_telemetry_readings_telemetry_readings_ingest_post",
         "requestBody": {
           "content": {
