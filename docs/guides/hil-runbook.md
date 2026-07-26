@@ -17,10 +17,10 @@ makes the Map link resolve.
 | Need | Detail |
 |---|---|
 | **Android handset** (physical) | API 26+. A physical device is required — an emulator can't pair the **BLE ELM327 dongle** and has limited camera. |
-| **ELM327 BLE dongle** in a **CAN vehicle** | 2008+ light vehicle (Mode 09 VIN auto-read is CAN-scoped; older vehicles fall back to barcode/manual). |
+| **ELM327 BLE dongle** in a **CAN vehicle** | 2008+ light vehicle (Mode 09 VIN auto-read is CAN-scoped; older vehicles fall back to barcode/manual). **Which dongle to buy:** [`hil-prep.md` §1](hil-prep.md). |
 | **Dev host** | Android SDK + `adb`; this repo checked out. (iOS is out of scope — no `ios/` codebase yet.) |
-| **Live TagPulse backend** | `docker compose up` in `~/ws/TagPulse` → API on `http://<host>:8000`. |
-| **Tenant credentials** (out-of-band) | a tenant user **`tp_{slug}_…` API key** with **admin/editor** role (for setup + ingest) and a tenant **provisioning key**. |
+| **Live TagPulse backend** | `docker compose up` in `~/ws/TagPulse` → API on `http://<host>:8000`, **or** the deployed **dev (ACA)** env (HTTPS out of the box) — see [`hil-prep.md` §2](hil-prep.md). |
+| **Tenant credentials** (out-of-band) | a tenant user **`tp_{slug}_…` API key** with **admin/editor** role (for setup + ingest) and a tenant **provisioning key**. Stand these up with the prompt in [`hil-prep.md` §2](hil-prep.md). |
 
 > **Network:** the handset must reach the backend host. Use the host's LAN IP (not
 > `localhost`) as the `baseUrl`, and ensure the phone and backend are on the same network /
@@ -136,6 +136,8 @@ VIN set in Part A.2.)
 
 ## Related
 
+- **Before you start** — dongle selection + live-tenant provisioning:
+  [`hil-prep.md`](hil-prep.md).
 - Design: [`obdii-mve-plan.md`](../design/obdii-mve-plan.md) (§1 acceptance),
   [`enrolment-flow.md`](../design/enrolment-flow.md), [`vehicle-bind-flow.md`](../design/vehicle-bind-flow.md).
 - Backend E2E: [`scripts/e2e/a7-map-check.py`](../../scripts/e2e/a7-map-check.py) + its
