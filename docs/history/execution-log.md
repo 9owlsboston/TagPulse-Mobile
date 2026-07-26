@@ -805,3 +805,31 @@ Full SDLC. Closes the last open TagPulse-Mobile backend follow-up (the backend s
   config → CHANGELOG-exempt, rubber-duck-exempt). BleUuidConfig edit is strictly inside a
   `/** */` KDoc → no compile impact. Verified with `docs-drift.py --repo . --strict`.
 - **current-state:** updated (SHA line + hil-prep mention + snapshot date).
+
+## 2026-07-26 — C-ZVMF instrumented R8 gate: first hardware run + two release-bug fixes
+
+- **Context:** Block B — actually run `JacksonR8SmokeTest` (never run on HW before; KDoc
+  said "this env has no emulator/KVM"). Ran it on a physical Samsung SM-S731U over
+  wireless adb (WSL host has no `/dev/kvm`; usbipd/USB blocked by Samsung Auto Blocker).
+- **Harness bring-up:** the minified androidTest APK (`testBuildType=release`) stripped its
+  own reflectively-loaded harness. Iterated: `androidx.tracing.Trace` (AndroidJUnitRunner),
+  `androidx.test.**` + `kotlin.**` (test APK), and — because the test APK is R8'd with the
+  app-under-test as a PROVIDED input (de-dup) — kotlin-stdlib facades the harness+asserts
+  call had to be kept in the app-under-test. Converged the kotlin gap OFFLINE (strings/dexdump
+  diff of test-refs vs app-defs) to avoid repeated device runs.
+- **Two REAL release-only bugs the test then caught** (green on JVM contract test, broken on
+  the minified app): (1) `OkHttpBackendClient.<clinit>` threw `TypeReference constructed
+  without actual type information` — `-keepclassmembers ... extends TypeReference` let R8
+  erase the anon subclass Signature → changed to `-keep`. (2) `GeoLocation` deserialized as
+  "no Creators" — jackson-module-kotlin needs a rename-consistent `@Metadata` → changed
+  `-keepclassmembers` to `-keep`. Both in `gateway-core/consumer-rules.pro`.
+- **Rubber-duck (required, build-config):** no correctness issues with the 2 product fixes;
+  TypeReference wildcard verified to match only the 3 expected anon subclasses; all prod
+  Jackson read paths covered. BLOCKING: test-only keeps polluted the shipped `release`
+  (~48KB). **Fix adopted:** new `r8Test` build type `initWith(release)` carries the harness
+  keeps (`app/proguard-rules-r8test.pro`); `testBuildType="r8Test"`; `release` restored clean.
+- **Result:** `./gradlew :app:connectedR8TestAndroidTest` → **3 tests, 0 failures** on device.
+  Shipped `release` APK **byte-identical size** to pre-change baseline (24,423,976 B); R8
+  usage.txt still strips 197 api.model classes (C-ZVMF metric intact).
+- **Commands:** `connectedR8TestAndroidTest` (device, green) + `lintDebug testDebugUnitTest
+  assembleDebug` (green) + `assembleRelease` (clean-app verify). current-state: not-affected.
