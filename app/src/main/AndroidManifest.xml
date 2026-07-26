@@ -37,9 +37,9 @@
             </intent-filter>
         </activity>
 
-        <!-- Enrolment QR scanner (C-RYH7 Increment 1b); internal, never exported. -->
+        <!-- Camera barcode scanner (C-RYH7 — enrolment QR + VIN barcode); never exported. -->
         <activity
-            android:name=".enrol.QrScanActivity"
+            android:name=".barcode.BarcodeScanActivity"
             android:exported="false" />
     </application>
 

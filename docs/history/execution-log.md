@@ -734,3 +734,27 @@ Full SDLC. Adds the zero-touch VIN capture tier (OQ3 tier-1) feeding the 2a bind
   **app 50** (+3), **gateway-core 58**; `failures=0 errors=0`; lint clean; debug APK built.
 - **HIL:** real dongle Mode 09 read (CAN vehicles; legacy → manual fallback). **Increment 2c**
   (VIN barcode, reuse the ML Kit scanner) staged. **current-state:** reconciled.
+
+## 2026-07-25 — C-RYH7 Increment 2c: VIN barcode capture
+
+Full SDLC. The last OQ3 capture tier — reuses the 1b ML Kit scanner (generalized) + the 2a resolve path.
+
+- **Change:** generalized `enrol/QrScanActivity` → `barcode/BarcodeScanActivity` (format-
+  parameterized via `EXTRA_FORMATS`; optional `EXTRA_ACCEPT_PATTERN` to keep scanning past
+  non-matching codes) + `BarcodeScanContract(formats, acceptPattern?)`; deleted the old
+  `enrol/QrScan*` files; manifest activity rename; `EnrolRoute` now uses
+  `BarcodeScanContract(FORMAT_QR_CODE)` (QR flow unchanged). New pure `VinBarcode.extract`
+  (strip AIAG leading `I`, validate 17-alphanumeric). `BindScreen` "Scan VIN barcode" button;
+  `BindRoute` launches `BarcodeScanContract(CODE_39/128/DATA_MATRIX, "I?[A-Z0-9]{17}")` →
+  `VinBarcode.extract` → `coordinator.resolve(vin)`.
+- **Gates:** plan-stage rubber-duck (3 findings: busy-label accept-pattern; AIAG-`I` strip;
+  format scope) → addressed. Diff-stage code-review → no blocking (enrolment byte-identical;
+  pattern≡extract set; ML Kit API + atomics preserved; two-launcher safety). Attestations in
+  `docs/design/vehicle-bind-flow.md`; scanner-rename noted in `enrolment-flow.md`.
+- **Commands:** `./gradlew :app:testDebugUnitTest :app:lintDebug assembleDebug` +
+  `:app:assembleRelease` (R8) + `:app:assembleReleaseAndroidTest` → all green: **app 56** (+6
+  `VinBarcode`); `failures=0 errors=0`; the package move didn't disturb the R8 keep-rules or the
+  instrumented smoke test.
+- **HIL:** real camera Code-39 decode. **C-RYH7 capture tiers complete** (Mode 09 → barcode →
+  manual; OCR deferred). Remaining: real-device HIL end-to-end; open follow-ups (backend return
+  matched binding_kind; re-vendor openapi.json). **current-state:** reconciled.
