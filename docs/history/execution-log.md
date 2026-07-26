@@ -758,3 +758,28 @@ Full SDLC. The last OQ3 capture tier — reuses the 1b ML Kit scanner (generaliz
 - **HIL:** real camera Code-39 decode. **C-RYH7 capture tiers complete** (Mode 09 → barcode →
   manual; OCR deferred). Remaining: real-device HIL end-to-end; open follow-ups (backend return
   matched binding_kind; re-vendor openapi.json). **current-state:** reconciled.
+
+## 2026-07-25 — I-WAPN: warn on lookup-only VIN bindings + re-vendor contract
+
+Full SDLC. Closes the last open TagPulse-Mobile backend follow-up (the backend shipped I-WAPN).
+
+- **Discovery:** the backend (`~/ws/TagPulse` @ 8033d64) already added `AssetByBindingResponse`
+  with the matched `binding_kind` (schema doc cites "(I-WAPN)"). Re-vendor delta 06dde2b→8033d64
+  is fully additive (+4 paths, +5 schemas, 0 removed; relay models TagReadCreate/Location/
+  Identity UNCHANGED). CRITICAL: backend resolves by-binding by earliest `bound_at` (not
+  device-first) → `binding_kind=='vin'` is AMBIGUOUS → the app must WARN, not block.
+- **Change:** re-vendored `openapi.json` (CONTRACT.md + contract.properties → 8033d64);
+  `AssetLookupResult.Resolved` gains `bindingKind` (thin-parsed); `BindState.Confirming` gains
+  optional `warning`; `resolveCore` sets it iff `binding_kind != "device"` (uncertainty-aware
+  wording); `BindScreen` renders it in error color. Confirm still allowed (warn, not block).
+- **Gates:** plan-stage rubber-duck (2 findings: warn-not-block; warn-unless-device + soft
+  wording) → folded in. Diff-stage code-review → no blocking (null-safe compare, thin-parse
+  safe-default, all 8 Resolved sites updated, additive spec swap). Attestations in
+  `docs/design/vehicle-bind-flow.md`.
+- **Commands:** `./gradlew :gateway-core:openApiGenerate` (regeneration compiles; 153 model
+  files) + `:gateway-core:testDebugUnitTest` (58) + `:app:testDebugUnitTest` (59, +3 warning
+  tests) + `:app:lintDebug` + `assembleDebug` + `:app:assembleRelease` (R8) → all green.
+  R8 usage.txt: **150/153** generated model files stripped, used relay models kept,
+  `AssetByBindingResponse` stripped-unused — C-ZVMF tree-shaking intact.
+- **current-state:** not-affected (internal bind-confirm warning; the high-level snapshot is
+  unchanged). Resolved ledger **I-WAPN**.

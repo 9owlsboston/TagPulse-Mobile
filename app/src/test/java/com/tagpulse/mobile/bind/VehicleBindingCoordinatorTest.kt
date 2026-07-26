@@ -4,6 +4,8 @@ import com.tagpulse.gateway.core.relay.AssetLookupResult
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,7 +38,7 @@ class VehicleBindingCoordinatorTest {
 
     @Test
     fun `resolve then confirm persists the binding and reports Bound`() = runBlocking {
-        val h = Harness(AssetLookupResult.Resolved(assetId = "asset-9", displayLabel = "MASS-1234"))
+        val h = Harness(AssetLookupResult.Resolved(assetId = "asset-9", displayLabel = "MASS-1234", bindingKind = "device"))
 
         h.coordinator.resolve("  1hgcm82633a004352 ")
 
@@ -52,6 +54,33 @@ class VehicleBindingCoordinatorTest {
     }
 
     @Test
+    fun `a device binding resolves with no warning`() = runBlocking {
+        val h = Harness(AssetLookupResult.Resolved("asset-9", "MASS-1234", bindingKind = "device"))
+        h.coordinator.resolve(validVin)
+        val state = h.coordinator.state.value as BindState.Confirming
+        assertNull(state.warning)
+    }
+
+    @Test
+    fun `a lookup-only vin binding resolves to Confirming WITH a warning`() = runBlocking {
+        val h = Harness(AssetLookupResult.Resolved("asset-9", "MASS-1234", bindingKind = "vin"))
+        h.coordinator.resolve(validVin)
+        val state = h.coordinator.state.value as BindState.Confirming
+        assertNotNull(state.warning)
+        // Still Confirming (warn, not block) — the operator can proceed.
+        assertEquals("MASS-1234", state.plate)
+    }
+
+    @Test
+    fun `a non-device binding kind (or null) warns`() = runBlocking {
+        for (kind in listOf("epc", "tid", null)) {
+            val h = Harness(AssetLookupResult.Resolved("a", "P", bindingKind = kind))
+            h.coordinator.resolve(validVin)
+            assertNotNull("kind=$kind should warn", (h.coordinator.state.value as BindState.Confirming).warning)
+        }
+    }
+
+    @Test
     fun `invalid VIN is an INPUT error with no network`() = runBlocking {
         val h = Harness(AssetLookupResult.NotFound)
         h.coordinator.resolve("NOT-A-VIN")
@@ -61,7 +90,7 @@ class VehicleBindingCoordinatorTest {
 
     @Test
     fun `resolved vehicle with no plate is a NO_PLATE error`() = runBlocking {
-        val h = Harness(AssetLookupResult.Resolved(assetId = "asset-9", displayLabel = null))
+        val h = Harness(AssetLookupResult.Resolved(assetId = "asset-9", displayLabel = null, bindingKind = "device"))
         h.coordinator.resolve(validVin)
         assertEquals(BindState.ErrorKind.NO_PLATE, (h.coordinator.state.value as BindState.Error).kind)
     }
@@ -102,7 +131,7 @@ class VehicleBindingCoordinatorTest {
     @Test
     fun `readVin success resolves the read VIN to Confirming`() = runBlocking {
         val h = Harness(
-            result = AssetLookupResult.Resolved(assetId = "asset-9", displayLabel = "MASS-1234"),
+            result = AssetLookupResult.Resolved(assetId = "asset-9", displayLabel = "MASS-1234", bindingKind = "device"),
             vinRead = VinReadOutcome.Read("1hgcm82633a004352"),
         )
         assertTrue(h.coordinator.canReadVin)

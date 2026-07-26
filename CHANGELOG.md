@@ -26,6 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   minified variant; `connectedReleaseAndroidTest` on an emulator/CI is the remaining
   gate — this repo has no emulator). Debug builds don't run R8 and are unaffected.
 
+### Changed
+- **`I-WAPN` — the handset now warns on a lookup-only VIN binding.** The contract is
+  **re-vendored** (`openapi.json` `06dde2b → 8033d64`) to pick up the backend's
+  `AssetByBindingResponse`, which returns the **matched `binding_kind`** for a
+  `GET /assets/by-binding` resolve. Only a `binding_kind='device'` binding Map-links the
+  handset's `tag_id = VIN` reads, so `VehicleBindingCoordinator` now surfaces an
+  (uncertainty-aware) **warning** on the bind-confirm screen whenever the resolved binding is
+  **not** `device` (a lookup-only `vin`, or `epc`/`tid`). It's advisory — the endpoint returns
+  the earliest-bound binding, so `vin` is ambiguous — so the operator can still confirm. Closes
+  ledger `I-WAPN`; the R8 tree-shaking (`C-ZVMF`) is unaffected by the re-vendor.
+
 ### Added
 - **Vehicle VIN-bind flow** (ledger `C-RYH7`, Increment 2a) — after enrolment the handset
   is now **bound to one vehicle by VIN**, so its reads Map-link to the right asset (replaces

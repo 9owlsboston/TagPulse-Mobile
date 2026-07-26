@@ -133,7 +133,18 @@ class VehicleBindingCoordinator(
                         "This vehicle has no plate on file — ask an admin to set it, then retry.",
                     )
                 } else {
-                    _state.value = BindState.Confirming(vin, plate, result.assetId)
+                    // Only a `device` binding Map-links the handset's `tag_id = VIN` reads
+                    // (I-WAPN). Any other matched kind (lookup-only `vin`, or `epc`/`tid`) is
+                    // advisory — the endpoint returns the earliest-bound binding, so this
+                    // can't *prove* a device binding is absent; warn, don't block.
+                    val warning = if (result.bindingKind == BINDING_KIND_DEVICE) {
+                        null
+                    } else {
+                        "Map compatibility couldn't be verified for this VIN. You can continue; " +
+                            "if the vehicle doesn't appear on the map, ask an admin to check its " +
+                            "device binding."
+                    }
+                    _state.value = BindState.Confirming(vin, plate, result.assetId, warning)
                 }
             }
             is AssetLookupResult.NotFound ->
@@ -172,5 +183,8 @@ class VehicleBindingCoordinator(
 
     private companion object {
         const val TAG = "VehicleBindingCoordinator"
+
+        /** The only binding kind that Map-links the handset's `tag_id = VIN` reads (I-WAPN). */
+        const val BINDING_KIND_DEVICE = "device"
     }
 }

@@ -47,5 +47,5 @@ class FakeBackendClient(
     ): ProvisionResult = ProvisionResult.Registered(deviceId = "fake-device", status = "pending")
 
     override suspend fun resolveAssetByBinding(value: String): AssetLookupResult =
-        AssetLookupResult.Resolved(assetId = "fake-asset", displayLabel = "PLATE-000")
+        AssetLookupResult.Resolved(assetId = "fake-asset", displayLabel = "PLATE-000", bindingKind = "device")
 }

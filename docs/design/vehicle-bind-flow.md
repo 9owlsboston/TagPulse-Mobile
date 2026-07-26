@@ -81,14 +81,15 @@ finding #4) — else `Confirming(vin, plate, assetId)`. `404` → `Error(NOT_FOU
 `401`/`403` → `Error(CREDENTIAL)`; retryable/terminal → `Error(NETWORK)`. `confirm()`:
 persist to `VehicleBindingStore` → `Bound`. `Mutex`-serialized; secret-free errors. Fakes-tested.
 
-> **Map-link limitation (documented).** A successful resolve confirms the vehicle's
-> **identity** (the plate), but does **not** prove the reads will Map-link: that requires an
-> admin-set `binding_kind='device'` binding whose value = the canonical VIN, and
-> `/assets/by-binding` is kind-agnostic (it could resolve a `vin`-only lookup binding). The
-> endpoint doesn't return the matched kind, so the app can't distinguish. The Map link is an
-> **admin-setup prerequisite verified in HIL** (`a7-map-check.py`). Backend follow-up (logged):
-> have `by-binding` return the matched `binding_kind` so the handset can warn on a `vin`-only
-> resolve.
+> **Map-link warning (`I-WAPN`, closed).** A successful resolve confirms the vehicle's
+> **identity** (the plate), but only a `binding_kind='device'` binding (value = the canonical
+> VIN) Map-links the handset's `tag_id = VIN` reads. Since `I-WAPN`, `/assets/by-binding`
+> returns the **matched `binding_kind`** (via `AssetByBindingResponse`), so the coordinator
+> **warns** whenever the resolved binding is **not** `device` (a lookup-only `vin`, or `epc`/
+> `tid`). The warning is **advisory, not a block**: the endpoint returns the *earliest-bound*
+> binding, so `vin` is ambiguous (vin-only vs. both-with-vin-first) — the operator can still
+> confirm, with uncertainty-aware wording. The definitive Map link is still verified in HIL
+> (`a7-map-check.py`); a device-first vehicle resolves clean (no warning).
 
 ### 5. `BindScreen` (Compose) + routing
 
@@ -201,3 +202,25 @@ binding). **Increment 2b/2c** (Mode 09, barcode) are staged.
   `failures=0 errors=0`.
 - **HIL (not run here):** the real camera Code-39 decode. With 2c all three OQ3 capture tiers
   (Mode 09 auto → barcode → manual) are built; windshield OCR stays deferred.
+
+### I-WAPN — warn on lookup-only VIN bindings (+ contract re-vendor)
+
+- **Plan-stage rubber-duck:** **ran → 2 findings**, folded in: (1) the backend resolves
+  `by-binding` by **earliest `bound_at`** (not device-first), so `binding_kind=='vin'` is
+  **ambiguous** → **warn, don't block**; (2) suppress the warning **only when
+  `binding_kind == "device"`** (the sole kind that Map-links a `tag_id = VIN` read — `epc`/
+  `tid`/`vin`/`null` all warn) with **uncertainty-aware wording**.
+- **Diff-stage rubber-duck (code-review):** **ran → no blocking issues.** Verified the
+  null-safe `== "device"` compare, `confirm()` unaffected by the warning, the thin-parse
+  safe-default (absent/blank → warn), all 8 `Resolved(...)` construction sites updated, the
+  `Confirming.warning = null` default keeping existing assertions valid, and the **additive**
+  spec swap.
+- **Change:** re-vendored `openapi.json` `06dde2b → 8033d64` (which added `AssetByBindingResponse`
+  carrying the matched `binding_kind`; `CONTRACT.md` + `contract.properties` bumped);
+  `AssetLookupResult.Resolved` gains `bindingKind` (thin-parsed); `BindState.Confirming` gains an
+  optional `warning`; `BindScreen` renders it. Closes ledger **`I-WAPN`**.
+- **Verification:** `:gateway-core:testDebugUnitTest` (**58**) + `:app:testDebugUnitTest`
+  (**59**, incl. +3 device/vin/epc-tid-null warning tests) + `:app:lintDebug` + `assembleDebug`
+  + **`assembleRelease` (R8)** green — the re-vendor didn't disturb the **C-ZVMF** tree-shaking
+  (**150/153** generated model files stripped; the used relay models kept; `AssetByBindingResponse`
+  stripped-unused). `failures=0 errors=0`.
