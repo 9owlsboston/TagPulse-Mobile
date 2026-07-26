@@ -87,6 +87,10 @@ was removed):
   atomics guarantee one result and no `ImageProxy` leak; the scanner is closed on destroy.
   `exported="false"`; never logs the decoded value. `QrScanContract` is an
   `ActivityResultContract<Unit, String?>`.
+  > **Since Increment 2c:** this scanner was generalized to a format-parameterized
+  > **`BarcodeScanActivity`** (package `com.tagpulse.mobile.barcode`) — enrolment launches it
+  > with `BarcodeScanContract(FORMAT_QR_CODE)` (behavior unchanged), and the vehicle-bind flow
+  > reuses it for Code 39 / Code 128 / Data Matrix VIN labels. See `vehicle-bind-flow.md` §2c.
 - **Wiring:** `MainActivity.EnrolRoute` launches the contract, parses the raw with
   `EnrolmentQrCode`, and sets a `prefill` seeding the form; an unreadable/cancelled scan
   leaves the fields untouched. The camera glue is HIL; the parser is the gate-covered logic.

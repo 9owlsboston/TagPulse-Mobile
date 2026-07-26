@@ -20,15 +20,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.tagpulse.mobile.barcode.BarcodeScanContract
 import com.tagpulse.mobile.bind.BindState
 import com.tagpulse.mobile.bind.VehicleBindingCoordinator
+import com.tagpulse.mobile.bind.VinBarcode
 import com.tagpulse.mobile.di.AppContainer
 import com.tagpulse.mobile.enrol.EnrolState
 import com.tagpulse.mobile.enrol.EnrolmentCoordinator
 import com.tagpulse.mobile.enrol.EnrolmentQrCode
 import com.tagpulse.mobile.enrol.ProvisioningPayload
-import com.tagpulse.mobile.enrol.QrScanContract
 import com.tagpulse.mobile.scan.ScanCoordinator
+import com.google.mlkit.vision.barcode.common.Barcode
 import kotlinx.coroutines.launch
 
 /**
@@ -85,6 +87,23 @@ private fun AppRoot(container: AppContainer) {
 @Composable
 private fun BindRoute(coordinator: VehicleBindingCoordinator, state: BindState) {
     val scope = rememberCoroutineScope()
+
+    // Scan a door-jamb VIN barcode (Code 39 / Code 128 / Data Matrix); the accept-pattern
+    // lets the scanner skip non-VIN codes on a busy label. VinBarcode strips a leading AIAG
+    // 'I' and validates the shape, then the value funnels into the same resolve() path.
+    val barcodeLauncher = rememberLauncherForActivityResult(
+        BarcodeScanContract(
+            formats = intArrayOf(
+                Barcode.FORMAT_CODE_39,
+                Barcode.FORMAT_CODE_128,
+                Barcode.FORMAT_DATA_MATRIX,
+            ),
+            acceptPattern = "I?[A-Z0-9]{17}",
+        ),
+    ) { raw ->
+        VinBarcode.extract(raw)?.let { vin -> scope.launch { coordinator.resolve(vin) } }
+    }
+
     com.tagpulse.mobile.ui.BindScreen(
         state = state,
         onResolve = { vin -> scope.launch { coordinator.resolve(vin) } },
@@ -94,12 +113,13 @@ private fun BindRoute(coordinator: VehicleBindingCoordinator, state: BindState) 
         } else {
             null
         },
+        onScanBarcode = { barcodeLauncher.launch(Unit) },
     )
 }
 
 /**
  * Binds the [EnrolmentCoordinator] to [com.tagpulse.mobile.ui.EnrolScreen] and wires the
- * enrolment **QR scan** (Increment 1b): a launcher over [QrScanContract] returns the raw
+ * enrolment **QR scan** (Increment 1b): a launcher over [BarcodeScanContract] returns the raw
  * QR, which [EnrolmentQrCode.parse] turns into a [ProvisioningPayload] used to prefill the
  * form (the `tp_` ingest key is still pasted). An unreadable / cancelled scan leaves the
  * fields untouched.
@@ -109,7 +129,9 @@ private fun EnrolRoute(coordinator: EnrolmentCoordinator, state: EnrolState) {
     val scope = rememberCoroutineScope()
     var prefill by remember { mutableStateOf<ProvisioningPayload?>(null) }
 
-    val qrLauncher = rememberLauncherForActivityResult(QrScanContract()) { raw ->
+    val qrLauncher = rememberLauncherForActivityResult(
+        BarcodeScanContract(intArrayOf(Barcode.FORMAT_QR_CODE)),
+    ) { raw ->
         EnrolmentQrCode.parse(raw)?.let { prefill = it }
     }
 

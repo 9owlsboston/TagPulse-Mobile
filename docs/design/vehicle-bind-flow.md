@@ -34,8 +34,12 @@ SHA `71ed1e6`; design `TagPulse:docs/design/asset-display-label-vin-lookup.md`).
   (multi-frame ISO-TP parser, CAN-scoped) + `Elm327Session.readVin()` + `ObdiiDriver.readVin()`;
   a `VinReader` seam feeds the same bind flow (auto-read → resolve → confirm plate). The
   zero-touch capture tier; the live read is HIL.
-- **Increment 2c:** VIN **barcode** capture (reuses the Increment 1b ML Kit scanner for the
-  door-jamb Code 39 label). Windshield OCR remains deferred (OQ3).
+- **Increment 2c (done):** VIN **barcode** capture — a **Scan VIN barcode** button reads a
+  door-jamb Code 39 / Code 128 / Data Matrix VIN label (reusing the Increment 1b ML Kit
+  scanner, generalized to a format-parameterized `BarcodeScanActivity`) and funnels the
+  decoded VIN into the same resolve→confirm flow. `VinBarcode.extract` (pure) strips the AIAG
+  `I` data-identifier and validates the 17-char shape; the scanner's accept-pattern skips
+  non-VIN codes on a busy label. Windshield OCR remains deferred (OQ3).
 
 ## What changes (Increment 2a)
 
@@ -176,3 +180,24 @@ binding). **Increment 2b/2c** (Mode 09, barcode) are staged.
   clean; `assembleDebug` built. `failures=0 errors=0`.
 - **HIL (not run here):** the real dongle Mode 09 read (not all ECUs support `0902`; CAN
   vehicles only — legacy falls back to manual entry). **Increment 2c** (VIN barcode) staged.
+
+### Increment 2c — VIN barcode capture
+
+- **Plan-stage rubber-duck:** **ran → 3 findings**, addressed: (1) a busy door label has
+  multiple barcodes — the scanner takes an optional **accept-pattern** (`I?[A-Z0-9]{17}`) and
+  **keeps scanning past** non-matching codes; (2) a VIN barcode may carry a leading AIAG `I`
+  data-identifier (18-char payload) — pure `VinBarcode.extract` strips it and validates the
+  17-char shape; (3) format coverage scoped to **Code 39 / Code 128 / Data Matrix** (the
+  standard door-jamb VIN symbologies; QR VIN tags out of scope, documented).
+- **Diff-stage rubber-duck (code-review):** **ran → no blocking issues.** Verified the
+  enrolment QR flow is **byte-identical** after generalizing `QrScanActivity` →
+  `BarcodeScanActivity` (accept-pattern absent ⇒ "first non-null rawValue"), the accept-pattern
+  and `VinBarcode.extract` accept the **identical** set (no silent no-op), the ML Kit
+  `setBarcodeFormats(first, *rest)` shape + empty-guard, the preserved `ImageProxy`/atomics, and
+  the two-launcher/one-Activity ActivityResult safety.
+- **Verification:** `:app:testDebugUnitTest` (**56**, incl. **+6** `VinBarcode`) + `:app:lintDebug`
+  + `assembleDebug` + **`assembleRelease` (R8)** + **`assembleReleaseAndroidTest`** green
+  (the package move didn't disturb the R8 keep-rules or the instrumented smoke test).
+  `failures=0 errors=0`.
+- **HIL (not run here):** the real camera Code-39 decode. With 2c all three OQ3 capture tiers
+  (Mode 09 auto → barcode → manual) are built; windshield OCR stays deferred.

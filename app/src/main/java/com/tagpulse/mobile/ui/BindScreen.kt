@@ -40,6 +40,8 @@ import com.tagpulse.mobile.bind.BindState
  * @param onConfirm invoked when the operator confirms the shown plate/vehicle.
  * @param onReadFromVehicle if non-null, a **Read VIN from vehicle** affordance is shown
  *   (OBD-II Mode 09 auto-read, Increment 2b); null hides it (manual VIN entry only).
+ * @param onScanBarcode if non-null, a **Scan VIN barcode** affordance is shown (Increment 2c);
+ *   null hides it.
  */
 @Composable
 fun BindScreen(
@@ -48,6 +50,7 @@ fun BindScreen(
     onConfirm: () -> Unit,
     modifier: Modifier = Modifier,
     onReadFromVehicle: (() -> Unit)? = null,
+    onScanBarcode: (() -> Unit)? = null,
 ) {
     var vin by rememberSaveable { mutableStateOf("") }
     val busy = state is BindState.Resolving || state is BindState.Reading
@@ -61,7 +64,8 @@ fun BindScreen(
     ) {
         Text(text = "Bind a vehicle", style = MaterialTheme.typography.headlineSmall)
         Text(
-            text = "Read the VIN from the vehicle or enter it, then confirm the license plate.",
+            text = "Read the VIN from the vehicle, scan the VIN barcode, or enter it — then " +
+                "confirm the license plate.",
             style = MaterialTheme.typography.bodyMedium,
         )
 
@@ -72,6 +76,16 @@ fun BindScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(text = "Read VIN from vehicle")
+            }
+        }
+
+        if (onScanBarcode != null) {
+            OutlinedButton(
+                onClick = onScanBarcode,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = "Scan VIN barcode")
             }
         }
 

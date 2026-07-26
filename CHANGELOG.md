@@ -56,6 +56,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vehicles fall back too). `Elm327Session.readVin()` (`0902`) + `ObdiiDriver.readVin()` mirror
   the existing read path; a `VinReader` seam wires it into `VehicleBindingCoordinator.readVin()`.
   +13 unit tests (decode matrix, session, driver, coordinator). The real dongle read is **HIL**.
+- **VIN barcode capture** (ledger `C-RYH7`, Increment 2c) — a **Scan VIN barcode** button reads
+  a door-jamb **Code 39 / Code 128 / Data Matrix** VIN label and funnels the VIN into the same
+  resolve→confirm flow. The Increment 1b QR scanner is generalized to a format-parameterized
+  **`BarcodeScanActivity`** (an accept-pattern lets it skip non-VIN codes on a busy label); pure
+  `VinBarcode.extract` strips the AIAG `I` data-identifier and validates the 17-char shape (+6
+  unit tests). Enrolment's QR scan is unchanged (now `BarcodeScanContract(FORMAT_QR_CODE)`). The
+  camera decode is **HIL**. With this, all three OQ3 VIN capture tiers (Mode 09 → barcode →
+  manual) are built; windshield OCR stays deferred.
 
 
   - **`EnrolmentCoordinator`** (`app`, mirrors `ScanCoordinator`) exposes an `EnrolState`

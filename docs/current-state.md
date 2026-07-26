@@ -30,8 +30,8 @@ MockWebServer + coordinator/enrolment/bind tests). **Remaining before it's demon
 hardware-in-the-loop (HIL)** — a real BLE dongle, real GPS, real Keystore creds, the live
 VIN resolve, and the A6/A7 enrol→bind→scan→Map against a running dev tenant (a runnable,
 backend-validated E2E script exists at `scripts/e2e/a7-map-check.py`). The OBD-II **Mode 09
-VIN auto-read** (Increment 2b) is built (live read HIL); the **VIN barcode** capture tier
-(Increment 2c) remains.
+VIN auto-read** (Increment 2b) and **VIN barcode** capture (Increment 2c) are built — all three
+VIN capture tiers (auto → barcode → manual); the live camera/dongle reads are HIL.
 
 ## Diagram
 
@@ -59,8 +59,8 @@ One line per area, each linking to the doc that owns the detail.
   `GET /assets/by-binding` → confirm plate → reads carry the canonical VIN as `tag_id`;
   ledger `C-RYH7` Increment 2a, backend `I-P923`). MVE acceptance: **A1–A5 code-complete**
   (real creds/backend HIL), **A6/A7 HIL** (+ runnable `scripts/e2e/a7-map-check.py`),
-  **A8 gate green**. Next: **VIN barcode** capture (Increment 2c) + real-device **HIL** (ledger
-  `C-RYH7`); then the Phase-1+ roadmap. See
+  **A8 gate green**. Next: real-device **HIL** end-to-end (ledger `C-RYH7` — enrol → bind →
+  scan → Map on a handset); then the Phase-1+ roadmap. See
   [`docs/design/obdii-mve-plan.md`](design/obdii-mve-plan.md),
   [`docs/design/enrolment-flow.md`](design/enrolment-flow.md), and
   [`docs/design/vehicle-bind-flow.md`](design/vehicle-bind-flow.md).
