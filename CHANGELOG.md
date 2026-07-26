@@ -7,7 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`C-ZVMF` — two release-only R8 defects the instrumented smoke test caught on its
+  first real hardware run** (Samsung SM-S731U). Both were invisible to the unminified
+  JVM `JacksonR8ContractTest` and only manifest in the minified app:
+  - **`OkHttpBackendClient.<clinit>` threw** `IllegalArgumentException: TypeReference
+    constructed without actual type information` — under R8 full-mode,
+    `-keepclassmembers class * extends TypeReference` let R8 erase the anonymous
+    subclass's generic-superclass **`Signature`**, so the relay client could not
+    initialize in the release app. Fixed by keeping the subclasses (`-keep class *
+    extends TypeReference { *; }`) in `gateway-core/consumer-rules.pro`.
+  - **`GeoLocation` failed to deserialize** (`no Creators, cannot construct instance`)
+    — jackson-module-kotlin resolves the primary constructor via the class's Kotlin
+    `@Metadata`, which R8 full-mode does not keep consistent across a rename, so
+    outbox location decode was broken in release. Fixed by keeping `GeoLocation`
+    fully (`-keep`, was `-keepclassmembers`).
+  The shipped `release` APK is **byte-identical in size** to before the fix (24.42 MB;
+  R8 still strips the 197 unused generated models — the C-ZVMF metric is unchanged).
+
 ### Changed
+- **`C-ZVMF` — the instrumented R8 gate now targets a dedicated `r8Test` build type**
+  instead of `release`. `JacksonR8SmokeTest` must run against a *minified* variant, but
+  the instrumented-test harness (a separate, also-minified APK, de-duped against the
+  app-under-test) needs a set of test-only keeps — `androidx.tracing.Trace`, kotlin-stdlib
+  facades the harness + assertions call (`StringsKt`, `MapsKt`, …), and the production
+  entry points the test invokes across the APK boundary (`OkHttpBackendClient`,
+  `OutboxJson`). Those keeps must **not** ship in `release`. `testBuildType` is now a new
+  `r8Test` type that `initWith(release)` (identical R8 minify + gateway-core consumer
+  rules, so the gate validates the same shrinking) and adds the harness keeps via
+  `app/proguard-rules-r8test.pro`; `release` stays free of test-only keep surface. Run
+  the gate with `./gradlew :app:connectedR8TestAndroidTest`.
+
 - **`C-ZVMF` — R8 footprint tree-shaking is now load-bearing.** The `:app` release
   build previously had `isMinifyEnabled = false`, so R8 never ran and the full
   ~145-schema generated OpenAPI **model superset** shipped even though the MVE uses

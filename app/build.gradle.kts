@@ -20,11 +20,12 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Instrumented tests target the MINIFIED `release` variant so JacksonR8SmokeTest
-    // validates the R8 keep-rules against the actually-shrunk app (ledger C-ZVMF).
+    // Instrumented tests target the MINIFIED `r8Test` variant so JacksonR8SmokeTest
+    // validates the R8 keep-rules against an app shrunk exactly like `release`
+    // (ledger C-ZVMF), without adding test-only keeps to the shipped `release` app.
     // Running it needs an emulator/device + a release signing config (CI/HIL gate);
-    // it compiles here via `:app:assembleReleaseAndroidTest`.
-    testBuildType = "release"
+    // it compiles here via `:app:assembleR8TestAndroidTest`.
+    testBuildType = "r8Test"
 
     buildTypes {
         release {
@@ -38,13 +39,26 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // R8 rules for the minified instrumented-test APK (testBuildType=release).
-            testProguardFiles("test-proguard-rules.pro")
             // Phase-0 placeholder: sign the minified release with the DEBUG keystore
-            // so `connectedReleaseAndroidTest` (JacksonR8SmokeTest — the R8 runtime
-            // gate) is installable on an emulator/CI. Replace with a real release
-            // signing config before any store release.
+            // so the `r8Test` variant (JacksonR8SmokeTest — the R8 runtime gate) is
+            // installable on an emulator/CI. Replace with a real release signing
+            // config before any store release.
             signingConfig = signingConfigs.getByName("debug")
+        }
+        // Dedicated minified variant for the instrumented R8 gate (testBuildType).
+        // It `initWith(release)` so it inherits the EXACT release R8 config (minify +
+        // the :gateway-core consumer-rules that drive the C-ZVMF model shrinking) —
+        // JacksonR8SmokeTest therefore validates the same R8 behavior as `release` —
+        // but adds test-harness/cross-APK keeps (proguard-rules-r8test.pro) that the
+        // shipped `release` app must NOT carry. Keeping them here (not in `release`)
+        // is why the production APK stays free of test-only keep surface.
+        create("r8Test") {
+            initWith(getByName("release"))
+            proguardFiles("proguard-rules-r8test.pro")
+            // R8 rules for the minified instrumented-test APK itself.
+            testProguardFiles("test-proguard-rules.pro")
+            // :gateway-core / :obdii have no `r8Test` type — resolve against release.
+            matchingFallbacks += "release"
         }
     }
 

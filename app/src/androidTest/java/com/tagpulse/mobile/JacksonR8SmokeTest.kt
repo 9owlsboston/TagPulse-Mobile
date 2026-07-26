@@ -18,23 +18,25 @@ import java.util.UUID
  * R8 keep-rule smoke test (ledger `C-ZVMF`) — the runtime half of the footprint
  * gate.
  *
- * This is an **instrumented** test so it runs against the **minified `release`**
- * variant (the module sets `testBuildType = "release"`), i.e. against the app
- * *after* R8 has tree-shaken the ~145-schema generated-model superset and applied
- * the gateway-core consumer keep-rules. It exercises the exact reflective Jackson
- * paths those rules must preserve: the generated `@get:JsonProperty` models (incl.
- * the nested `Location.Source` enum + `Identity`), `GeoLocation`, and the anonymous
- * `TypeReference` map reads.
+ * This is an **instrumented** test so it runs against the **minified `r8Test`**
+ * variant (the module sets `testBuildType = "r8Test"`, a build type that
+ * `initWith(release)` — same R8 minify + gateway-core consumer keep-rules as the
+ * shipped `release` app, plus test-harness-only keeps that `release` does not
+ * carry), i.e. against the app *after* R8 has tree-shaken the ~145-schema
+ * generated-model superset and applied the gateway-core consumer keep-rules. It
+ * exercises the exact reflective Jackson paths those rules must preserve: the
+ * generated `@get:JsonProperty` models (incl. the nested `Location.Source` enum +
+ * `Identity`), `GeoLocation`, and the anonymous `TypeReference` map reads.
  *
  * **Runs on an emulator/device + a release signing config only** (the remaining
  * CI/HIL gate — this env has no emulator/KVM). Build-verify it compiles against the
  * R8 variant with:
  * ```
- * ./gradlew :app:assembleReleaseAndroidTest
+ * ./gradlew :app:assembleR8TestAndroidTest
  * ```
  * Then, on a signed emulator/CI:
  * ```
- * ./gradlew :app:connectedReleaseAndroidTest
+ * ./gradlew :app:connectedR8TestAndroidTest
  * ```
  * The unminified contract is separately locked by
  * `gateway-core` `JacksonR8ContractTest` (JVM).
