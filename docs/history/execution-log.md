@@ -783,3 +783,25 @@ Full SDLC. Closes the last open TagPulse-Mobile backend follow-up (the backend s
   `AssetByBindingResponse` stripped-unused — C-ZVMF tree-shaking intact.
 - **current-state:** not-affected (internal bind-confirm warning; the high-level snapshot is
   unchanged). Resolved ledger **I-WAPN**.
+
+## 2026-07-26 — HIL prep docs + contract-SHA drift fix (C-RYH7 block A, `noncodefix`)
+
+- **Context:** C-RYH7 code is complete; only real-device HIL remains. Block-A housekeeping
+  ahead of dongle procurement, plus incorporation of the session's HIL-prep notes.
+- **Discovery:** the I-WAPN re-vendor (PR #19, `06dde2b→8033d64`) left `current-state.md:50`
+  stale at `06dde2b` — that entry logged "current-state: not-affected" but the SHA line *was*
+  affected. Also `BleUuidConfig.kt` KDoc named the OBDLink **MX+** as the superset target, but
+  MX+ is Bluetooth **Classic** and cannot connect to the BLE-only transport.
+- **Change (docs + comment-only, no behavior):**
+  - `docs/current-state.md`: openapi SHA `06dde2b → 8033d64`; snapshot date bump; hil-prep link.
+  - `obdii/.../ble/BleUuidConfig.kt`: KDoc MX+ → **CX** (the BLE OBDLink); flagged BLE-only
+    transport; noted the `NORDIC_UART_LIKE` default matches the Vgate iCar Pro BLE 4.0 per
+    vendor docs (`unverified` on a physical unit).
+  - `docs/guides/hil-prep.md` (new): dongle selection (Vgate primary / OBDLink CX premium /
+    avoid Classic+WiFi) + the deployed-dev (ACA) tenant-provisioning copilot prompt +
+    traceability. Incorporated from the session's `~/tmp` capture, made evergreen.
+  - `docs/guides/hil-runbook.md`: Prerequisites rows + Related cross-link to hil-prep.
+- **Gates:** `noncodefix` fast lane (docs + KDoc comment; no deps/CI/security/behavioral
+  config → CHANGELOG-exempt, rubber-duck-exempt). BleUuidConfig edit is strictly inside a
+  `/** */` KDoc → no compile impact. Verified with `docs-drift.py --repo . --strict`.
+- **current-state:** updated (SHA line + hil-prep mention + snapshot date).

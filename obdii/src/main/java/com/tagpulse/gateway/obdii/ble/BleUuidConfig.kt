@@ -10,7 +10,11 @@ import java.util.UUID
  * (`unverified`). Any field left `null` tells [AndroidBleTransport] to *discover*
  * it at runtime (the first service exposing a notify + write characteristic). The
  * [NORDIC_UART_LIKE] default matches the common clone layout but **must** be
- * overridable so an OBDLink MX+ (an ELM327 superset) needs no driver rewrite.
+ * overridable so a genuine adapter with a different GATT layout (e.g. an OBDLink
+ * **CX** — the BLE model in the OBDLink line; an ELM327 superset) needs no driver
+ * rewrite. **Transport is BLE-only** — a Bluetooth *Classic* adapter (e.g. OBDLink
+ * **MX+**) or a WiFi adapter will not connect. See `docs/guides/hil-prep.md` for the
+ * vetted dongle picks.
  *
  * @property serviceUuid GATT service to use, or `null` to discover.
  * @property notifyCharUuid characteristic that emits response notifications, or
@@ -25,9 +29,12 @@ data class BleUuidConfig(
 ) {
     companion object {
         /**
-         * Nordic-UART-like default many ELM327 BLE clones expose. **`unverified` —
-         * dongle-specific**; validate against the purchased adapter early (plan §9
-         * risk "ELM327 clone quirks"). Override, or pass `null`s to auto-discover.
+         * Nordic-UART-like default many ELM327 BLE clones expose. Per vendor/community
+         * docs this matches the **Vgate iCar Pro BLE 4.0** (the primary vetted test
+         * dongle — see `docs/guides/hil-prep.md`), but that is **`unverified` on a
+         * physical unit** and remains **dongle-specific**; validate against the
+         * purchased adapter early (plan §9 risk "ELM327 clone quirks"). Override, or
+         * pass `null`s to auto-discover.
          */
         val NORDIC_UART_LIKE: BleUuidConfig = BleUuidConfig(
             serviceUuid = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e"),
