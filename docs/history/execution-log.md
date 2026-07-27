@@ -833,3 +833,20 @@ Full SDLC. Closes the last open TagPulse-Mobile backend follow-up (the backend s
   usage.txt still strips 197 api.model classes (C-ZVMF metric intact).
 - **Commands:** `connectedR8TestAndroidTest` (device, green) + `lintDebug testDebugUnitTest
   assembleDebug` (green) + `assembleRelease` (clean-app verify). current-state: not-affected.
+
+## 2026-07-27 — Add production-distribution design doc (docs-only, `noncodefix`)
+
+- **Context:** user Q on how production distribution would work (iOS + Android). Captured
+  the strategy as a design-doc proposal so it survives as a future-phase reference.
+- **Change (docs only):** new `docs/design/distribution.md` — device-ownership fork
+  (managed fleet vs BYOD), per-platform channels (Managed Google Play private app / Play
+  App Signing / AAB; ABM Custom Apps / distribution cert / IPA), the MDM managed-config →
+  enrolment tie-in, CI/CD shape, repo-specific gaps (debug-signed release, no iOS code,
+  24MB ML Kit footprint), a prerequisites checklist, and open decisions D-1…D-4. Summary
+  -first with a hand-drawn Mermaid context diagram; assumptions/`unverified` flagged
+  (managed-fleet assumption; Apple/Google program terms shift). Cross-linked from
+  `mobile-client.md` Phased plan.
+- **Gates:** `noncodefix` (docs-only design proposal; no code/deps/CI/security/behavioral
+  config → CHANGELOG- and rubber-duck-exempt). Verified with `docs-drift.py --strict`.
+- **current-state:** not-affected (adds a future-phase design doc; the high-level snapshot
+  is unchanged — distribution remains unbuilt/future).

@@ -147,6 +147,10 @@ Targets, not yet measured (`unverified` until Phase 0 builds exist):
 - **Phase 3 — extensions.** Optional MQTT transport, mTLS / hardware keys, BLE UHF-RFID
   sled, v2 wire format / presence where it buys something.
 
+> **Production distribution** (getting signed builds onto managed/BYOD field phones — app
+> stores, MDM/EMM, managed-config onboarding) is a separate future phase, sketched in
+> [`distribution.md`](distribution.md).
+
 ## Open questions
 
 - **Q-A — device principal & role.** `POST /telemetry/readings/ingest` is gated to
